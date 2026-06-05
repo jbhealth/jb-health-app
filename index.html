@@ -551,7 +551,6 @@ function openImportMileage(){ showModal('<h3>Import mileage</h3>'+
   '<div class="hint">Paste CSV/Excel with a header row, or choose a file. Recognised: <code>Date, From, To, From PC, To PC, Miles</code>. Rows sharing a date group into one day.</div>'+
   '<div class="field"><label>Choose a CSV file (optional)</label><input type="file" accept=".csv,.tsv,.txt" onchange="loadImportFile(this,\'im_text\')"></div>'+
   '<div class="field"><textarea id="im_text" placeholder="Date,From,To,From PC,To PC,Miles&#10;2026-04-07,Home,Tidmarsh,BA2 7BB,RG8 8HR,9.6"></textarea></div>'+
-  '<label style="font-size:12px;color:var(--grey);display:flex;align-items:center;gap:7px;margin-bottom:10px"><input type="checkbox" id="im_replace" style="width:auto"> Replace existing mileage (instead of add)</label>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doImportMileage()">Import</button></div>'); }
 function parseMileageCSV(text){ var rows=parseCSV(text); var hr=headerRow(rows);
   if(hr<0) return {days:[],legs:0,err:"Add a header row (Date, From, To, From PC, To PC, Miles)."};
@@ -573,7 +572,6 @@ function openImportFinance(){ showModal('<h3>Import transactions</h3>'+
   '<div class="hint">Paste from Excel/CSV (header row included), or choose a file. Recognised: <code>Date, Description, Category, Type, Amount, % Business use, Payment Method, Notes</code>.</div>'+
   '<div class="field"><label>Choose a CSV file (optional)</label><input type="file" accept=".csv,.tsv,.txt" onchange="loadImportFile(this,\'if_text\')"></div>'+
   '<div class="field"><textarea id="if_text" placeholder="Date,Description,Category,Type,Amount,% Business use,Payment Method,Notes"></textarea></div>'+
-  '<label style="font-size:12px;color:var(--grey);display:flex;align-items:center;gap:7px;margin-bottom:10px"><input type="checkbox" id="if_replace" style="width:auto"> Replace existing transactions (instead of add)</label>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doImportFinance()">Import</button></div>'); }
 function loadImportFile(input,target){ var f=input.files&&input.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=function(){ document.getElementById(target).value=rd.result; }; rd.readAsText(f); }
 function parseFinanceCSV(text){ var rows=parseCSV(text); var hr=headerRow(rows);
