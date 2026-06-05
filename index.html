@@ -301,7 +301,16 @@ async function connectSync(){
   if(!ghConfigured()){ alert("Fill in owner, repo and token."); return; }
   lsSet("jbh_repo", JSON.stringify({owner:cfg.owner,repo:cfg.repo,branch:cfg.branch,path:cfg.path}));
   lsSet("jbh_token", cfg.token); lsDel("jbh_sha");
-  setSave("","Connecting\u2026");
+  setSave("","Checking repo\u2026");
+  try{
+    var probe=await fetch("https://api.github.com/repos/"+encodeURIComponent(cfg.owner)+"/"+encodeURIComponent(cfg.repo),{headers:ghHeaders()});
+    if(probe.status===401){ closeModal(); setSave("warn","Token rejected (401) \u2014 the token is wrong or expired."); return; }
+    if(probe.status===404){ closeModal(); setSave("warn","Repo not found / no access (404). Check owner + repo spelling, and that the token lists THIS repo under \u2018Only select repositories\u2019."); return; }
+    if(!probe.ok){ closeModal(); setSave("warn","Repo check failed ("+probe.status+")."); return; }
+    var pj=await probe.json();
+    if(pj&&pj.permissions&&pj.permissions.push===false){ closeModal(); setSave("warn","Token can read but not write \u2014 set Contents: Read and write, then reconnect."); return; }
+    if(pj&&pj.default_branch&&cfg.branch!==pj.default_branch){ cfg.branch=pj.default_branch; var rc=JSON.parse(lsGet("jbh_repo")||"{}"); rc.branch=cfg.branch; lsSet("jbh_repo",JSON.stringify(rc)); }
+  }catch(e){ closeModal(); setSave("warn","Couldn\u2019t reach GitHub \u2014 check your connection."); return; }
   var ok=await pullFromGitHub(true);
   closeModal();
   if(ok){ // if no remote file yet, push current device data up to create it
