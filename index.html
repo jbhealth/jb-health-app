@@ -143,14 +143,14 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 
 <div class="view" id="view-mileage">
   <div class="summary" id="m_summary"></div>
-  <div class="actbar"><button class="primary" onclick="openTrip()">+ Day</button><button class="ghost" onclick="exportMileage()">Export CSV</button><span class="ratechip" id="ratechip" onclick="openRate()">Rate: —</span></div>
+  <div class="actbar"><button class="primary" onclick="openTrip()">+ Day</button><button class="ghost" onclick="exportMileage()">Export CSV</button><button class="ghost" onclick="openImportMileage()">Import</button><span class="ratechip" id="ratechip" onclick="openRate()">Rate: —</span></div>
   <div class="list" id="m_list"></div>
   <div class="note">One card per day. Add each leg as From → To with postcodes; tap <strong>Maps</strong> to open Google Maps directions, read the road miles, type them in. Claim = miles × rate. The postcodes are your HMRC route record. Not tax advice — confirm your rate basis with your accountant.</div>
 </div>
 
 <div class="view" id="view-finance">
   <div class="summary" id="f_summary"></div>
-  <div class="actbar"><button class="primary" onclick="openTxn()">+ Transaction</button><button class="ghost" onclick="exportFinance()">Export CSV</button></div>
+  <div class="actbar"><button class="primary" onclick="openTxn()">+ Transaction</button><button class="ghost" onclick="exportFinance()">Export CSV</button><button class="ghost" onclick="openImportFinance()">Import</button></div>
   <div class="mini" id="f_breakdown"></div>
   <div class="search-wrap"><input class="search-input" id="f_search" placeholder="Search transactions…" oninput="renderFinance()"></div>
   <div class="list" id="f_list"></div>
@@ -513,6 +513,60 @@ function csvCell(v){ v=v==null?"":String(v); return /[",\n]/.test(v)?'"'+v.repla
 function downloadCSV(rows,filename){ var csv=rows.map(function(r){return r.map(csvCell).join(",");}).join("\r\n");
   try{ var blob=new Blob([csv],{type:"text/csv"}),url=URL.createObjectURL(blob),a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},200); }
   catch(e){ showModal('<h3>Copy CSV</h3><div class="hint">Download blocked — copy this into a .csv.</div><div class="field"><textarea readonly style="min-height:160px">'+esc(csv)+'</textarea></div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); } }
+
+/* ---- import ---- */
+function parseCSV(text){ var rows=[],row=[],cur="",inQ=false,i=0,c; text=String(text).replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+  while(i<text.length){ c=text[i];
+    if(inQ){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else inQ=false; } else cur+=c; }
+    else { if(c==='"') inQ=true; else if(c===','){ row.push(cur); cur=""; } else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=""; } else cur+=c; }
+    i++; }
+  if(cur!==""||row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(function(r){ return r.some(function(x){return (x||"").trim()!=="";}); }); }
+function hIdx(header,names){ for(var i=0;i<header.length;i++){ var h=(header[i]||"").trim().toLowerCase(); if(names.indexOf(h)!==-1) return i; } return -1; }
+function looksLikeHeader(r){ var s=r.join(",").toLowerCase(); return /date|from|description|amount/.test(s); }
+
+function openImportMileage(){ showModal('<h3>Import mileage</h3>'+
+  '<div class="hint">Paste CSV with a header row. Recognised columns: <code>Date, From, To, From PC, To PC, Miles</code> (Day/Rate/Claim ignored). Rows with the same date group into one day. This <b>adds</b> to what\u2019s already there.</div>'+
+  '<div class="field"><textarea id="im_text" placeholder="Date,From,To,From PC,To PC,Miles&#10;2026-04-07,Home,Tidmarsh,BA2 7BB,RG8 8HR,9.6"></textarea></div>'+
+  '<div id="im_preview" class="hint"></div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doImportMileage()">Import</button></div>'); }
+function parseMileageCSV(text){ var rows=parseCSV(text); if(!rows.length) return {days:[],legs:0,err:"Nothing to import."};
+  if(!looksLikeHeader(rows[0])) return {days:[],legs:0,err:"Add a header row (Date, From, To, From PC, To PC, Miles)."};
+  var h=rows[0], di=hIdx(h,["date"]), fi=hIdx(h,["from"]), ti=hIdx(h,["to"]), fp=hIdx(h,["from pc","from postcode","frompc"]), tp=hIdx(h,["to pc","to postcode","topc"]), mi=hIdx(h,["miles","mileage"]);
+  if(di<0||fi<0||ti<0) return {days:[],legs:0,err:"Need at least Date, From and To columns."};
+  var byDate={}, order=[], legs=0;
+  for(var r=1;r<rows.length;r++){ var row=rows[r], d=(row[di]||"").trim(); if(!d) continue;
+    if(!byDate[d]){ byDate[d]={id:uid(),date:d,legs:[]}; order.push(d); }
+    byDate[d].legs.push({id:uid(),from:(row[fi]||"").trim(),to:(row[ti]||"").trim(),fromPC:fp>=0?(row[fp]||"").trim():"",toPC:tp>=0?(row[tp]||"").trim():"",miles:mi>=0?(round2(parseFloat(row[mi]))||0):0});
+    legs++; }
+  return {days:order.map(function(d){return byDate[d];}),legs:legs,err:null}; }
+function doImportMileage(){ var p=parseMileageCSV(document.getElementById("im_text").value);
+  if(p.err){ alert(p.err); return; } if(!p.days.length){ alert("No rows found."); return; }
+  mileage.trips=(mileage.trips||[]).concat(p.days); closeModal(); renderMileage(); saveM();
+  alert("Imported "+p.legs+" leg(s) across "+p.days.length+" day(s)."); }
+
+function openImportFinance(){ showModal('<h3>Import transactions</h3>'+
+  '<div class="hint">Paste CSV with a header row. Recognised: <code>Date, Description, Category, Type, Amount, % Business use, Payment Method, Notes</code>. Matches the Export columns, so you can export, edit in a spreadsheet, and re-import. This <b>adds</b> to what\u2019s already there.</div>'+
+  '<div class="field"><textarea id="if_text" placeholder="Date,Description,Category,Type,Amount,% Business use,Payment Method,Notes"></textarea></div>'+
+  '<div id="if_preview" class="hint"></div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doImportFinance()">Import</button></div>'); }
+function parseFinanceCSV(text){ var rows=parseCSV(text); if(!rows.length) return {txns:[],err:"Nothing to import."};
+  if(!looksLikeHeader(rows[0])) return {txns:[],err:"Add a header row (Date, Description, Amount, Type\u2026)."};
+  var h=rows[0], di=hIdx(h,["date"]), de=hIdx(h,["description","desc"]), ca=hIdx(h,["category","cat"]), ty=hIdx(h,["type"]),
+      am=hIdx(h,["amount (pre-%)","amount","amount (£)","amount (gbp)","gross"]), pc=hIdx(h,["% business use","% business","% biz","percent","business %"]),
+      me=hIdx(h,["payment method","method"]), no=hIdx(h,["notes","note"]);
+  if(di<0||am<0) return {txns:[],err:"Need at least Date and Amount columns."};
+  var out=[];
+  for(var r=1;r<rows.length;r++){ var row=rows[r], d=(row[di]||"").trim(); if(!d) continue;
+    var amt=round2(parseFloat((row[am]||"").replace(/[£$,\s]/g,"")))||0; if(!amt) continue;
+    var typ=ty>=0?(row[ty]||"").trim():""; typ=/^inc/i.test(typ)?"Income":/^exp/i.test(typ)?"Expense":(amt<0?"Expense":"Expense");
+    var pct=pc>=0?round2(parseFloat(row[pc])):100; if(isNaN(pct)) pct=100;
+    out.push({id:uid(),date:d,description:de>=0?(row[de]||"").trim():"",category:ca>=0?((row[ca]||"").trim()||"Other Allowable Expenses"):"Other Allowable Expenses",type:typ,amountPre:Math.abs(amt),pct:pct,method:me>=0?(row[me]||"").trim():"",notes:no>=0?(row[no]||"").trim():""}); }
+  return {txns:out,err:null}; }
+function doImportFinance(){ var p=parseFinanceCSV(document.getElementById("if_text").value);
+  if(p.err){ alert(p.err); return; } if(!p.txns.length){ alert("No rows found."); return; }
+  finance.txns=(finance.txns||[]).concat(p.txns); closeModal(); renderFinance(); saveF();
+  alert("Imported "+p.txns.length+" transaction(s)."); }
 
 /* ---- backup / restore ---- */
 function openBackup(){ var code=JSON.stringify(bundle());
