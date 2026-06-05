@@ -130,21 +130,21 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 <body>
 <div class="header"><div class="header-inner">
   <div><div class="brand">JB Health</div><h1 id="title">Session Tracker</h1></div>
-  <div class="header-tools">
+  <div class="header-tools" id="headerTools">
     <button class="tool-btn sync" onclick="openSync()">Sync</button>
     <button class="tool-btn" onclick="openBackup()">Backup</button>
     <button class="tool-btn" onclick="openRestore()">Restore</button>
   </div>
 </div></div>
 <div class="tabs"><div class="tabs-inner">
-  <button class="tab active" id="tab-sessions" onclick="switchTab('sessions')">Sessions</button>
+  <button class="tab active" id="tab-programs" onclick="switchTab('programs')">Programs</button>
+  <button class="tab" id="tab-sessions" onclick="switchTab('sessions')">Sessions</button>
   <button class="tab" id="tab-mileage" onclick="switchTab('mileage')">Mileage</button>
   <button class="tab" id="tab-finance" onclick="switchTab('finance')">Finance</button>
-  <button class="tab" id="tab-programs" onclick="switchTab('programs')">Programs</button>
 </div></div>
 <div class="savebar"><span class="dot off" id="syncdot"></span><span id="savestate">Starting…</span></div>
 
-<div class="view active" id="view-sessions">
+<div class="view" id="view-sessions">
   <div class="actbar"><button class="primary" onclick="openQuickLog()">Log today</button><button class="ghost" onclick="openAdd()">+ Client</button></div>
   <div class="summary" id="summary"></div>
   <div class="search-wrap"><input class="search-input" id="search" placeholder="Search client…" oninput="render()"></div>
@@ -168,7 +168,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
   <div class="note">Amount (£) = amount × % business use. Net = income − expenses − mileage claim (pulled live from the Mileage tab). Export CSV for your accountant / Self Assessment.</div>
 </div>
 
-<div class="view" id="view-programs">
+<div class="view active" id="view-programs">
   <div class="actbar"><button class="ghost" onclick="openProgSettings()">Programs token</button><span class="ratechip" id="progStatus" style="cursor:default">—</span></div>
   <div class="search-wrap"><input class="search-input" id="prog_search" placeholder="Search client…" oninput="renderPrograms()"></div>
   <div class="list" id="prog_list"></div>
@@ -180,6 +180,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
     <button class="prog-close" onclick="closeMaster()">✕</button>
     <span id="progTitle">Master</span>
     <button class="prog-act" onclick="pullMaster()">Pull</button>
+    <button class="prog-act" onclick="saveMasterNow(this)">Save</button>
     <button class="prog-act push" onclick="pushMaster()">Push to Git</button>
   </div>
   <iframe id="progFrame" class="prog-frame" title="Master editor"></iframe>
@@ -199,7 +200,7 @@ var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Co
 var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
 
 var data = {}, mileage = {rate:0.45, trips:[]}, finance = {txns:[]};
-var dataLoaded = false, seeded = false, activeTab = "sessions";
+var dataLoaded = false, seeded = false, activeTab = "programs";
 var cfg = {owner:"",repo:"",branch:"main",path:"data.json",token:""};
 var pushTimer=null, syncing=false, memLS={};
 
@@ -226,6 +227,7 @@ function b64ToUtf8(b64){ var bin=atob(String(b64).replace(/\s/g,"")),a=new Uint8
 function switchTab(name){ activeTab=name;
   ["sessions","mileage","finance","programs"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); });
   document.getElementById("title").textContent = name==="sessions"?"Session Tracker":(name==="mileage"?"Mileage":(name==="finance"?"Finance":"Programs"));
+  var ht=document.getElementById("headerTools"); if(ht) ht.style.display = (name==="programs")?"none":"";
   renderAll();
 }
 function renderAll(){ render(); renderMileage(); renderFinance(); renderPrograms(); }
@@ -749,6 +751,11 @@ function saveDraft(code){
   }catch(e){}
 }
 
+function saveMasterNow(btn){
+  if(!curMaster) return;
+  saveDraft(curMaster.code);
+  if(btn){ var t=btn.textContent; btn.textContent="Saved \u2713"; setTimeout(function(){ btn.textContent=t; },1200); }
+}
 function pullMaster(){ if(!curMaster) return;
   if(!confirm("Pull the latest from GitHub? This discards any on-screen edits you haven\u2019t pushed.")) return;
   lsDel("jbh_draft_"+curMaster.code); openMaster(curMaster.code);
@@ -791,9 +798,17 @@ function closeMaster(){
 }
 
 /* ---- startup ---- */
+function _historyTrap(){ try{ history.pushState({jbh:1}, ""); }catch(e){} }
+window.addEventListener("popstate", function(){
+  var m=document.getElementById("modal");
+  if(m && m.classList.contains("show")){ closeModal(); _historyTrap(); return; }
+  var ed=document.getElementById("progEditor");
+  if(ed && ed.classList.contains("show")){ closeMaster(); _historyTrap(); return; }
+  if(confirm("Leave JB Health?")){ history.back(); } else { _historyTrap(); }
+});
 function startup(){ loadCfg();
   try{ var c=lsGet("jbh_cache"); if(c) applyBundle(JSON.parse(c)); }catch(e){}
-  seedDefaults(); renderAll(); dataLoaded=true;
+  seedDefaults(); renderAll(); dataLoaded=true; switchTab("programs"); _historyTrap();
   if(ghConfigured()){ setSave("","Connected — pulling latest\u2026"); pullFromGitHub(); }
   else { setSave("","Saved on this device. Tap Sync to enable phone\u2194PC sync."); }
 }
