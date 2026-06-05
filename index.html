@@ -524,27 +524,35 @@ function downloadCSV(rows,filename){ var csv=rows.map(function(r){return r.map(c
   catch(e){ showModal('<h3>Copy CSV</h3><div class="hint">Download blocked — copy this into a .csv.</div><div class="field"><textarea readonly style="min-height:160px">'+esc(csv)+'</textarea></div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); } }
 
 /* ---- import ---- */
-function parseCSV(text){ var rows=[],row=[],cur="",inQ=false,i=0,c; text=String(text).replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+function detectDelim(text){ var lines=String(text).split(/\r?\n/); for(var i=0;i<lines.length;i++){ if(lines[i].trim()){ var t=(lines[i].match(/\t/g)||[]).length,c=(lines[i].match(/,/g)||[]).length; return t>c?"\t":","; } } return ","; }
+function parseCSV(text,delim){ delim=delim||detectDelim(text); var rows=[],row=[],cur="",inQ=false,i=0,c; text=String(text).replace(/\r\n/g,"\n").replace(/\r/g,"\n");
   while(i<text.length){ c=text[i];
     if(inQ){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else inQ=false; } else cur+=c; }
-    else { if(c==='"') inQ=true; else if(c===','){ row.push(cur); cur=""; } else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=""; } else cur+=c; }
+    else { if(c==='"') inQ=true; else if(c===delim){ row.push(cur); cur=""; } else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=""; } else cur+=c; }
     i++; }
   if(cur!==""||row.length){ row.push(cur); rows.push(row); }
   return rows.filter(function(r){ return r.some(function(x){return (x||"").trim()!=="";}); }); }
-function hIdx(header,names){ for(var i=0;i<header.length;i++){ var h=(header[i]||"").trim().toLowerCase(); if(names.indexOf(h)!==-1) return i; } return -1; }
-function looksLikeHeader(r){ var s=r.join(",").toLowerCase(); return /date|from|description|amount/.test(s); }
+function normH(s){ return String(s||"").toLowerCase().replace(/\([^)]*\)/g," ").replace(/[^a-z0-9% ]/g," ").replace(/\s+/g," ").trim(); }
+function hIdx(header,names){ var nn=names.map(normH); for(var i=0;i<header.length;i++){ if(nn.indexOf(normH(header[i]))!==-1) return i; } return -1; }
+function looksLikeHeader(r){ var s=r.join(" ").toLowerCase(); return /date|from|description|amount/.test(s); }
+function headerRow(rows){ for(var i=0;i<rows.length;i++){ if(looksLikeHeader(rows[i])) return i; } return -1; }
+function normDate(s){ s=String(s||"").trim(); var m;
+  if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)) return m[1]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[3]).slice(-2);
+  if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)) return m[3]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[1]).slice(-2);
+  if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})(?!\d)/)) return "20"+m[3]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[1]).slice(-2);
+  return s; }
 
 function openImportMileage(){ showModal('<h3>Import mileage</h3>'+
   '<div class="hint">Paste CSV with a header row. Recognised columns: <code>Date, From, To, From PC, To PC, Miles</code> (Day/Rate/Claim ignored). Rows with the same date group into one day. This <b>adds</b> to what\u2019s already there.</div>'+
   '<div class="field"><textarea id="im_text" placeholder="Date,From,To,From PC,To PC,Miles&#10;2026-04-07,Home,Tidmarsh,BA2 7BB,RG8 8HR,9.6"></textarea></div>'+
   '<div id="im_preview" class="hint"></div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doImportMileage()">Import</button></div>'); }
-function parseMileageCSV(text){ var rows=parseCSV(text); if(!rows.length) return {days:[],legs:0,err:"Nothing to import."};
-  if(!looksLikeHeader(rows[0])) return {days:[],legs:0,err:"Add a header row (Date, From, To, From PC, To PC, Miles)."};
-  var h=rows[0], di=hIdx(h,["date"]), fi=hIdx(h,["from"]), ti=hIdx(h,["to"]), fp=hIdx(h,["from pc","from postcode","frompc"]), tp=hIdx(h,["to pc","to postcode","topc"]), mi=hIdx(h,["miles","mileage"]);
+function parseMileageCSV(text){ var rows=parseCSV(text); var hr=headerRow(rows);
+  if(hr<0) return {days:[],legs:0,err:"Add a header row (Date, From, To, From PC, To PC, Miles)."};
+  var h=rows[hr], di=hIdx(h,["date"]), fi=hIdx(h,["from"]), ti=hIdx(h,["to"]), fp=hIdx(h,["from pc","from postcode","frompc"]), tp=hIdx(h,["to pc","to postcode","topc"]), mi=hIdx(h,["miles","mileage"]);
   if(di<0||fi<0||ti<0) return {days:[],legs:0,err:"Need at least Date, From and To columns."};
   var byDate={}, order=[], legs=0;
-  for(var r=1;r<rows.length;r++){ var row=rows[r], d=(row[di]||"").trim(); if(!d) continue;
+  for(var r=hr+1;r<rows.length;r++){ var row=rows[r], d=normDate(row[di]); if(!d) continue;
     if(!byDate[d]){ byDate[d]={id:uid(),date:d,legs:[]}; order.push(d); }
     byDate[d].legs.push({id:uid(),from:(row[fi]||"").trim(),to:(row[ti]||"").trim(),fromPC:fp>=0?(row[fp]||"").trim():"",toPC:tp>=0?(row[tp]||"").trim():"",miles:mi>=0?(round2(parseFloat(row[mi]))||0):0});
     legs++; }
@@ -559,17 +567,17 @@ function openImportFinance(){ showModal('<h3>Import transactions</h3>'+
   '<div class="field"><textarea id="if_text" placeholder="Date,Description,Category,Type,Amount,% Business use,Payment Method,Notes"></textarea></div>'+
   '<div id="if_preview" class="hint"></div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doImportFinance()">Import</button></div>'); }
-function parseFinanceCSV(text){ var rows=parseCSV(text); if(!rows.length) return {txns:[],err:"Nothing to import."};
-  if(!looksLikeHeader(rows[0])) return {txns:[],err:"Add a header row (Date, Description, Amount, Type\u2026)."};
-  var h=rows[0], di=hIdx(h,["date"]), de=hIdx(h,["description","desc"]), ca=hIdx(h,["category","cat"]), ty=hIdx(h,["type"]),
-      am=hIdx(h,["amount (pre-%)","amount","amount (£)","amount (gbp)","gross"]), pc=hIdx(h,["% business use","% business","% biz","percent","business %"]),
+function parseFinanceCSV(text){ var rows=parseCSV(text); var hr=headerRow(rows);
+  if(hr<0) return {txns:[],err:"Add a header row (Date, Description, Amount, Type\u2026)."};
+  var h=rows[hr], di=hIdx(h,["date"]), de=hIdx(h,["description","desc"]), ca=hIdx(h,["category","cat"]), ty=hIdx(h,["type"]),
+      am=hIdx(h,["amount","amount pre","gross"]), pc=hIdx(h,["% business use","% business","% biz","business use","business %","percent"]),
       me=hIdx(h,["payment method","method"]), no=hIdx(h,["notes","note"]);
   if(di<0||am<0) return {txns:[],err:"Need at least Date and Amount columns."};
   var out=[];
-  for(var r=1;r<rows.length;r++){ var row=rows[r], d=(row[di]||"").trim(); if(!d) continue;
+  for(var r=hr+1;r<rows.length;r++){ var row=rows[r], d=normDate(row[di]); if(!d) continue;
     var amt=round2(parseFloat((row[am]||"").replace(/[£$,\s]/g,"")))||0; if(!amt) continue;
-    var typ=ty>=0?(row[ty]||"").trim():""; typ=/^inc/i.test(typ)?"Income":/^exp/i.test(typ)?"Expense":(amt<0?"Expense":"Expense");
-    var pct=pc>=0?round2(parseFloat(row[pc])):100; if(isNaN(pct)) pct=100;
+    var typ=ty>=0?(row[ty]||"").trim():""; typ=/^inc/i.test(typ)?"Income":/^exp/i.test(typ)?"Expense":"Expense";
+    var pct=pc>=0?parseFloat(String(row[pc]).replace(/[%\s]/g,"")):100; if(isNaN(pct)) pct=100; pct=(pct>0&&pct<=1)?round2(pct*100):round2(pct);
     out.push({id:uid(),date:d,description:de>=0?(row[de]||"").trim():"",category:ca>=0?((row[ca]||"").trim()||"Other Allowable Expenses"):"Other Allowable Expenses",type:typ,amountPre:Math.abs(amt),pct:pct,method:me>=0?(row[me]||"").trim():"",notes:no>=0?(row[no]||"").trim():""}); }
   return {txns:out,err:null}; }
 function doImportFinance(){ var p=parseFinanceCSV(document.getElementById("if_text").value);
