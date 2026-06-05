@@ -540,12 +540,18 @@ function normDate(s){ s=String(s||"").trim(); var m;
   if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)) return m[1]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[3]).slice(-2);
   if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)) return m[3]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[1]).slice(-2);
   if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})(?!\d)/)) return "20"+m[3]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[1]).slice(-2);
+  var MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12,january:1,february:2,march:3,april:4,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+  var toks=s.toLowerCase().replace(/,/g," ").replace(/[\-\/.]/g," ").replace(/\s+/g," ").trim().split(" ");
+  var mo=0,day=0,yr=0;
+  for(var i=0;i<toks.length;i++){ var t=toks[i]; if(MON[t]) mo=MON[t]; else if(/^\d{4}$/.test(t)) yr=parseInt(t,10); else if(/^\d{1,2}$/.test(t)&&!day) day=parseInt(t,10); }
+  if(mo&&day&&yr) return yr+"-"+("0"+mo).slice(-2)+"-"+("0"+day).slice(-2);
   return s; }
 
 function openImportMileage(){ showModal('<h3>Import mileage</h3>'+
-  '<div class="hint">Paste CSV with a header row. Recognised columns: <code>Date, From, To, From PC, To PC, Miles</code> (Day/Rate/Claim ignored). Rows with the same date group into one day. This <b>adds</b> to what\u2019s already there.</div>'+
+  '<div class="hint">Paste CSV/Excel with a header row, or choose a file. Recognised: <code>Date, From, To, From PC, To PC, Miles</code>. Rows sharing a date group into one day.</div>'+
+  '<div class="field"><label>Choose a CSV file (optional)</label><input type="file" accept=".csv,.tsv,.txt" onchange="loadImportFile(this,\'im_text\')"></div>'+
   '<div class="field"><textarea id="im_text" placeholder="Date,From,To,From PC,To PC,Miles&#10;2026-04-07,Home,Tidmarsh,BA2 7BB,RG8 8HR,9.6"></textarea></div>'+
-  '<div id="im_preview" class="hint"></div>'+
+  '<label style="font-size:12px;color:var(--grey);display:flex;align-items:center;gap:7px;margin-bottom:10px"><input type="checkbox" id="im_replace" style="width:auto"> Replace existing mileage (instead of add)</label>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doImportMileage()">Import</button></div>'); }
 function parseMileageCSV(text){ var rows=parseCSV(text); var hr=headerRow(rows);
   if(hr<0) return {days:[],legs:0,err:"Add a header row (Date, From, To, From PC, To PC, Miles)."};
@@ -559,14 +565,17 @@ function parseMileageCSV(text){ var rows=parseCSV(text); var hr=headerRow(rows);
   return {days:order.map(function(d){return byDate[d];}),legs:legs,err:null}; }
 function doImportMileage(){ var p=parseMileageCSV(document.getElementById("im_text").value);
   if(p.err){ alert(p.err); return; } if(!p.days.length){ alert("No rows found."); return; }
-  mileage.trips=(mileage.trips||[]).concat(p.days); closeModal(); renderMileage(); saveM();
-  alert("Imported "+p.legs+" leg(s) across "+p.days.length+" day(s)."); }
+  var rep=document.getElementById("im_replace")&&document.getElementById("im_replace").checked;
+  mileage.trips = rep ? p.days : (mileage.trips||[]).concat(p.days); closeModal(); renderMileage(); saveM();
+  alert((rep?"Replaced with ":"Imported ")+p.legs+" leg(s) across "+p.days.length+" day(s)."); }
 
 function openImportFinance(){ showModal('<h3>Import transactions</h3>'+
-  '<div class="hint">Paste CSV with a header row. Recognised: <code>Date, Description, Category, Type, Amount, % Business use, Payment Method, Notes</code>. Matches the Export columns, so you can export, edit in a spreadsheet, and re-import. This <b>adds</b> to what\u2019s already there.</div>'+
+  '<div class="hint">Paste from Excel/CSV (header row included), or choose a file. Recognised: <code>Date, Description, Category, Type, Amount, % Business use, Payment Method, Notes</code>.</div>'+
+  '<div class="field"><label>Choose a CSV file (optional)</label><input type="file" accept=".csv,.tsv,.txt" onchange="loadImportFile(this,\'if_text\')"></div>'+
   '<div class="field"><textarea id="if_text" placeholder="Date,Description,Category,Type,Amount,% Business use,Payment Method,Notes"></textarea></div>'+
-  '<div id="if_preview" class="hint"></div>'+
+  '<label style="font-size:12px;color:var(--grey);display:flex;align-items:center;gap:7px;margin-bottom:10px"><input type="checkbox" id="if_replace" style="width:auto"> Replace existing transactions (instead of add)</label>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doImportFinance()">Import</button></div>'); }
+function loadImportFile(input,target){ var f=input.files&&input.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=function(){ document.getElementById(target).value=rd.result; }; rd.readAsText(f); }
 function parseFinanceCSV(text){ var rows=parseCSV(text); var hr=headerRow(rows);
   if(hr<0) return {txns:[],err:"Add a header row (Date, Description, Amount, Type\u2026)."};
   var h=rows[hr], di=hIdx(h,["date"]), de=hIdx(h,["description","desc"]), ca=hIdx(h,["category","cat"]), ty=hIdx(h,["type"]),
@@ -582,8 +591,9 @@ function parseFinanceCSV(text){ var rows=parseCSV(text); var hr=headerRow(rows);
   return {txns:out,err:null}; }
 function doImportFinance(){ var p=parseFinanceCSV(document.getElementById("if_text").value);
   if(p.err){ alert(p.err); return; } if(!p.txns.length){ alert("No rows found."); return; }
-  finance.txns=(finance.txns||[]).concat(p.txns); closeModal(); renderFinance(); saveF();
-  alert("Imported "+p.txns.length+" transaction(s)."); }
+  var rep=document.getElementById("if_replace")&&document.getElementById("if_replace").checked;
+  finance.txns = rep ? p.txns : (finance.txns||[]).concat(p.txns); closeModal(); renderFinance(); saveF();
+  alert((rep?"Replaced with ":"Imported ")+p.txns.length+" transaction(s)."); }
 
 /* ---- backup / restore ---- */
 function openBackup(){ var code=JSON.stringify(bundle());
