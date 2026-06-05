@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JB Health">
+<meta name="theme-color" content="#1B3F6B">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231B3F6B'/%3E%3Ctext x='32' y='43' font-family='Georgia,serif' font-size='30' font-weight='700' fill='%232E86C1' text-anchor='middle'%3EJB%3C/text%3E%3C/svg%3E">
+<title>JB Health — Tracker</title>
+<style>
+:root{--navy:#1B3F6B;--blue:#2E86C1;--warm:#FAFCFE;--dark:#1A1A1A;--grey:#6B7A8D;--border:#D4E4F0;--accent:#E8F4FD;--red:#E24B4A;--green:#2E9E6B;--amber:#9A6B16;--credit:#EAF7F0;--owe:#FDECEC;--serif:Georgia,'Times New Roman',serif;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height:100vh;}
+.header{background:var(--navy);padding:calc(22px + env(safe-area-inset-top)) 18px 18px;}
+.header-inner{max-width:760px;margin:0 auto;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+.brand{font-family:var(--serif);font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:var(--blue);margin-bottom:4px;}
+.header h1{font-family:var(--serif);font-size:clamp(21px,5vw,27px);font-weight:700;color:#fff;line-height:1.1;}
+.header-tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+.tool-btn{background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.18);border-radius:8px;padding:7px 11px;font-size:11px;color:#fff;cursor:pointer;font-family:var(--sans);white-space:nowrap;}
+.tool-btn:active{background:rgba(255,255,255,0.25);}
+.tool-btn.sync{background:var(--blue);border-color:var(--blue);}
+.tabs{background:var(--navy);padding:0 18px;}
+.tabs-inner{max-width:760px;margin:0 auto;display:flex;gap:4px;}
+.tab{flex:1;background:none;border:none;color:rgba(255,255,255,0.6);font-family:var(--sans);font-size:13px;font-weight:600;padding:12px 6px;cursor:pointer;border-bottom:3px solid transparent;}
+.tab.active{color:#fff;border-bottom-color:var(--blue);}
+.savebar{max-width:760px;margin:0 auto;padding:8px 18px 0;display:flex;align-items:center;gap:6px;}
+.savebar span{font-size:11px;color:var(--grey);}
+.savebar span.ok{color:var(--green);}
+.savebar span.warn{color:var(--red);}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--grey);flex:none;}
+.dot.ok{background:var(--green);}.dot.warn{background:var(--red);}.dot.off{background:#C7D2DD;}
+.view{display:none;}.view.active{display:block;}
+.summary{max-width:760px;margin:0 auto;padding:12px 18px 0;display:flex;gap:9px;flex-wrap:wrap;}
+.sum-card{flex:1;min-width:110px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:13px 15px;}
+.sum-num{font-family:var(--serif);font-size:23px;font-weight:700;color:var(--navy);}
+.sum-num.owe,.sum-num.red{color:var(--red);}.sum-num.credit,.sum-num.green{color:var(--green);}
+.sum-label{font-size:10.5px;color:var(--grey);text-transform:uppercase;letter-spacing:0.07em;margin-top:2px;}
+.actbar{max-width:760px;margin:0 auto;padding:14px 18px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.actbar button{border:none;border-radius:9px;padding:10px 14px;font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;}
+.actbar .primary{background:var(--navy);color:#fff;}
+.actbar .ghost{background:var(--accent);color:var(--blue);border:1px solid var(--border);}
+.actbar .ratechip{margin-left:auto;font-size:11.5px;color:var(--grey);background:#fff;border:1px solid var(--border);border-radius:20px;padding:7px 12px;cursor:pointer;}
+.search-wrap{max-width:760px;margin:16px auto 0;padding:0 18px;}
+.search-input{width:100%;border:1.5px solid var(--border);border-radius:10px;padding:11px 15px;font-size:16px;font-family:var(--sans);outline:none;background:#fff;}
+.search-input:focus{border-color:var(--blue);}
+.list{max-width:760px;margin:0 auto;padding:14px 18px 80px;}
+.client{background:#fff;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;}
+.client-row{display:flex;justify-content:space-between;align-items:center;padding:15px 16px;cursor:pointer;gap:10px;}
+.client-row:active{background:var(--accent);}
+.client-name{font-family:var(--serif);font-size:15px;font-weight:700;color:var(--navy);}
+.client-sub{font-size:11.5px;color:var(--grey);margin-top:2px;}
+.bal{font-size:13px;font-weight:600;padding:4px 11px;border-radius:20px;white-space:nowrap;}
+.bal.credit{background:var(--credit);color:var(--green);}
+.bal.owe{background:var(--owe);color:var(--red);}
+.bal.zero,.bal.neutral{background:var(--accent);color:var(--grey);}
+.bal.navy{background:var(--accent);color:var(--navy);}
+.client-body{display:none;padding:0 16px 16px;border-top:1px solid var(--border);}
+.client.open .client-body{display:block;}
+.actions{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;}
+.act{flex:1;min-width:104px;border:none;border-radius:9px;padding:11px;font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;}
+.act.pay{background:var(--green);color:#fff;}
+.act.session{background:var(--navy);color:#fff;}
+.act.setbal,.act.edit{background:var(--accent);color:var(--blue);border:1px solid var(--border);}
+.act.del{background:var(--owe);color:var(--red);}
+.act:active{opacity:0.8;}
+.hist-label{font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--grey);margin:6px 0;}
+.entry{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(27,63,107,0.07);font-size:13px;}
+.entry:last-child{border-bottom:none;}
+.entry-main{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.entry-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;white-space:nowrap;}
+.entry-tag.in{background:var(--credit);color:var(--green);}
+.entry-tag.out{background:var(--accent);color:var(--navy);}
+.entry-tag.open{background:#FFF4E0;color:var(--amber);}
+.entry-tag.exp{background:var(--owe);color:var(--red);}
+.entry-meta{color:var(--grey);font-size:12px;}
+.entry-del{background:none;border:none;color:var(--grey);cursor:pointer;font-size:15px;padding:3px 8px;border-radius:5px;}
+.entry-del:active{background:var(--owe);color:var(--red);}
+.empty-hist{color:var(--grey);font-size:13px;padding:8px 0;}
+.leg{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(27,63,107,0.07);font-size:13px;}
+.leg:last-child{border-bottom:none;}
+.leg-route{flex:1;min-width:0;}.leg-route b{color:var(--navy);font-weight:600;}
+.leg-miles{font-weight:600;color:var(--navy);white-space:nowrap;}
+.leg-maps{font-size:11px;color:var(--blue);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;white-space:nowrap;}
+.mini{max-width:760px;margin:0 auto;padding:4px 18px 0;}
+.mini h4{font-family:var(--serif);color:var(--navy);font-size:13px;margin:14px 0 6px;}
+.mini-row{display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px solid rgba(27,63,107,0.06);}
+.mini-row span:last-child{font-weight:600;color:var(--navy);}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;align-items:center;justify-content:center;padding:18px;}
+.modal.show{display:flex;}
+.modal-box{background:#fff;border-radius:14px;padding:20px;width:360px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:88vh;overflow:auto;}
+.modal-box h3{font-family:var(--serif);color:var(--navy);font-size:17px;margin-bottom:14px;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:11px;color:var(--grey);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;}
+.field input,.field select,.field textarea{width:100%;border:1.5px solid var(--border);border-radius:8px;padding:10px 11px;font-size:16px;font-family:var(--sans);outline:none;}
+.field textarea{min-height:90px;font-size:12px;font-family:monospace;resize:vertical;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--blue);}
+.row2{display:flex;gap:8px;}.row2>*{flex:1;}
+.legedit{border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:9px;background:var(--warm);}
+.legedit .lehead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.legedit .lehead b{font-size:11px;color:var(--grey);text-transform:uppercase;letter-spacing:0.05em;}
+.legedit .lertools{display:flex;gap:6px;}
+.le-maps{font-size:11px;color:var(--blue);background:var(--accent);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;}
+.le-x{font-size:13px;color:var(--red);background:var(--owe);border:none;border-radius:6px;padding:4px 9px;cursor:pointer;}
+.le-field{margin-bottom:7px;}
+.le-field label{font-size:10px;color:var(--grey);display:block;margin-bottom:3px;}
+.le-field input{width:100%;border:1.5px solid var(--border);border-radius:7px;padding:8px 9px;font-size:15px;font-family:var(--sans);outline:none;}
+.addleg{width:100%;background:var(--accent);color:var(--blue);border:1px dashed var(--blue);border-radius:9px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:12px;}
+.modal-btns{display:flex;gap:8px;margin-top:6px;}
+.modal-btns button{flex:1;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer;}
+.mb-save{background:var(--navy);color:#fff;}.mb-cancel{background:var(--border);color:var(--dark);}
+.hint{font-size:11.5px;color:var(--grey);line-height:1.5;margin-bottom:12px;}
+.statusline{font-size:12px;padding:9px 11px;border-radius:8px;margin-bottom:12px;background:var(--accent);color:var(--navy);}
+.statusline.ok{background:var(--credit);color:var(--green);}
+.statusline.warn{background:var(--owe);color:var(--red);}
+.note{max-width:760px;margin:0 auto;padding:0 18px 40px;color:var(--grey);font-size:11px;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="header"><div class="header-inner">
+  <div><div class="brand">JB Health</div><h1 id="title">Session Tracker</h1></div>
+  <div class="header-tools">
+    <button class="tool-btn sync" onclick="openSync()">Sync</button>
+    <button class="tool-btn" onclick="openBackup()">Backup</button>
+    <button class="tool-btn" onclick="openRestore()">Restore</button>
+  </div>
+</div></div>
+<div class="tabs"><div class="tabs-inner">
+  <button class="tab active" id="tab-sessions" onclick="switchTab('sessions')">Sessions</button>
+  <button class="tab" id="tab-mileage" onclick="switchTab('mileage')">Mileage</button>
+  <button class="tab" id="tab-finance" onclick="switchTab('finance')">Finance</button>
+</div></div>
+<div class="savebar"><span class="dot off" id="syncdot"></span><span id="savestate">Starting…</span></div>
+
+<div class="view active" id="view-sessions">
+  <div class="actbar"><button class="primary" onclick="openQuickLog()">Log today</button><button class="ghost" onclick="openAdd()">+ Client</button></div>
+  <div class="summary" id="summary"></div>
+  <div class="search-wrap"><input class="search-input" id="search" placeholder="Search client…" oninput="render()"></div>
+  <div class="list" id="list"></div>
+  <div class="note">Balance = sessions paid in minus sessions delivered. Green = in credit, red = owes you. Part-sessions are fine (e.g. 1.75). Changes save to this device instantly and sync to GitHub when connected.</div>
+</div>
+
+<div class="view" id="view-mileage">
+  <div class="summary" id="m_summary"></div>
+  <div class="actbar"><button class="primary" onclick="openTrip()">+ Day</button><button class="ghost" onclick="exportMileage()">Export CSV</button><span class="ratechip" id="ratechip" onclick="openRate()">Rate: —</span></div>
+  <div class="list" id="m_list"></div>
+  <div class="note">One card per day. Add each leg as From → To with postcodes; tap <strong>Maps</strong> to open Google Maps directions, read the road miles, type them in. Claim = miles × rate. The postcodes are your HMRC route record. Not tax advice — confirm your rate basis with your accountant.</div>
+</div>
+
+<div class="view" id="view-finance">
+  <div class="summary" id="f_summary"></div>
+  <div class="actbar"><button class="primary" onclick="openTxn()">+ Transaction</button><button class="ghost" onclick="exportFinance()">Export CSV</button></div>
+  <div class="mini" id="f_breakdown"></div>
+  <div class="search-wrap"><input class="search-input" id="f_search" placeholder="Search transactions…" oninput="renderFinance()"></div>
+  <div class="list" id="f_list"></div>
+  <div class="note">Amount (£) = amount × % business use. Net = income − expenses − mileage claim (pulled live from the Mileage tab). Export CSV for your accountant / Self Assessment.</div>
+</div>
+
+<div class="modal" id="modal"><div class="modal-box" id="modalBox"></div></div>
+
+<script>
+var CLIENTS = [
+  ["AM","Alizon M."],["AC","Alyson C."],["AB","Anna B."],["AL","Anne L."],["BW","Biddy W."],
+  ["CP","Caroline P."],["CM","Carrie M."],["CB","Claire B."],["EC","Elaine C."],["EL","Elaine L."],
+  ["FH","Fiona H."],["JJ","Jan J."],["KH","Karen H."],["KB","Ken B."],["LS","Lucy S."],
+  ["MH","Martin H."],["NS","Nikki S."],["RC","Rob C."],["SP","Shaun P."],["SD","Simon D."],
+  ["SB","Steve B."],["HH","Harvey H."]
+];
+var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Cost of Goods Sold","Advertising & Marketing","Professional Fees","Software & Subscriptions","Bank Charges","Telephone & Internet","Home Office","Training & Courses","Insurance","Repairs & Maintenance","Other Allowable Expenses","Non-allowable (Personal)"];
+var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
+
+var data = {}, mileage = {rate:0.45, trips:[]}, finance = {txns:[]};
+var dataLoaded = false, seeded = false, activeTab = "sessions";
+var cfg = {owner:"",repo:"",branch:"main",path:"data.json",token:""};
+var pushTimer=null, syncing=false, memLS={};
+
+/* ---- helpers ---- */
+function fmt(n){ var r=Math.round((Number(n)||0)*100)/100; return Number.isInteger(r)?String(r):r.toFixed(2); }
+function round2(n){ return Math.round((Number(n)||0)*100)/100; }
+function gbp(n){ return "\u00a3"+(Math.round((Number(n)||0)*100)/100).toFixed(2); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function today(){ return new Date().toISOString().slice(0,10); }
+var DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function dayOf(iso){ var d=new Date(iso+"T00:00:00"); return isNaN(d)?"":DOW[d.getDay()]; }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function js(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return (k in memLS)?memLS[k]:null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){ memLS[k]=v; } }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){ delete memLS[k]; } }
+function setSave(state,msg){ var el=document.getElementById("savestate"); el.className=state; el.textContent=msg;
+  var d=document.getElementById("syncdot"); d.className="dot "+(state||(ghConfigured()?"":"off")); }
+
+function utf8ToB64(str){ var b=new TextEncoder().encode(str),s=""; for(var i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
+function b64ToUtf8(b64){ var bin=atob(String(b64).replace(/\s/g,"")),a=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new TextDecoder().decode(a); }
+
+/* ---- tabs ---- */
+function switchTab(name){ activeTab=name;
+  ["sessions","mileage","finance"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); });
+  document.getElementById("title").textContent = name==="sessions"?"Session Tracker":(name==="mileage"?"Mileage":"Finance");
+  renderAll();
+}
+function renderAll(){ render(); renderMileage(); renderFinance(); }
+
+/* ---- GitHub sync ---- */
+function loadCfg(){ try{ var c=JSON.parse(lsGet("jbh_repo")||"{}"); cfg.owner=c.owner||""; cfg.repo=c.repo||""; cfg.branch=c.branch||"main"; cfg.path=c.path||"data.json"; }catch(e){} cfg.token=lsGet("jbh_token")||""; }
+function ghConfigured(){ return !!(cfg.token && cfg.owner && cfg.repo); }
+function apiUrl(){ return "https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+cfg.path.split("/").map(encodeURIComponent).join("/"); }
+function ghHeaders(){ return {"Authorization":"Bearer "+cfg.token,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Content-Type":"application/json"}; }
+function bundle(){ return {v:3, sessions:data, mileage:mileage, finance:finance, ts:Date.now()}; }
+function cacheLocal(){ lsSet("jbh_cache", JSON.stringify(bundle())); }
+function applyBundle(obj){
+  if(!obj||typeof obj!=="object") return;
+  if(obj.sessions||obj.mileage||obj.finance){ data=obj.sessions||{}; mileage=obj.mileage||{rate:0.45,trips:[]}; finance=obj.finance||{txns:[]}; }
+  else { data=obj; }
+  if(!mileage.trips) mileage.trips=[]; if(typeof mileage.rate!=="number") mileage.rate=0.45; if(!finance.txns) finance.txns=[];
+  seeded=false; seedDefaults();
+}
+function persist(){
+  if(!dataLoaded){ setSave("warn","Still loading — not saved yet."); return; }
+  cacheLocal();
+  if(!ghConfigured()){ setSave("","Saved on this device"); return; }
+  setSave("","Saved \u00b7 syncing\u2026");
+  if(pushTimer) clearTimeout(pushTimer);
+  pushTimer=setTimeout(pushToGitHub, 1000);
+}
+function save(){ persist(); } function saveM(){ persist(); } function saveF(){ persist(); }
+
+async function pushToGitHub(){
+  if(!ghConfigured()) return;
+  if(syncing){ pushTimer=setTimeout(pushToGitHub,800); return; }
+  syncing=true;
+  try{
+    var body={ message:"JB Health update "+new Date().toISOString(), content:utf8ToB64(JSON.stringify(bundle())), branch:cfg.branch };
+    var sha=lsGet("jbh_sha"); if(sha) body.sha=sha;
+    var res=await fetch(apiUrl(), {method:"PUT", headers:ghHeaders(), body:JSON.stringify(body)});
+    if(res.status===409||res.status===422){ syncing=false; return handleConflict(); }
+    if(res.status===401||res.status===403){ setSave("warn","GitHub rejected the token — open Sync to fix."); syncing=false; return; }
+    if(!res.ok){ setSave("warn","Sync failed ("+res.status+") — saved on device."); syncing=false; return; }
+    var j=await res.json(); if(j&&j.content&&j.content.sha) lsSet("jbh_sha", j.content.sha);
+    lsSet("jbh_lastsync", String(Date.now())); setSave("ok","Synced to GitHub \u2713");
+  }catch(e){ setSave("warn","Offline — saved on device, will sync next change."); }
+  syncing=false;
+}
+async function pullFromGitHub(silent){
+  if(!ghConfigured()) return false;
+  try{
+    var res=await fetch(apiUrl()+"?ref="+encodeURIComponent(cfg.branch), {headers:ghHeaders()});
+    if(res.status===404){ setSave("","Connected — no data file yet (first save creates it)."); return true; }
+    if(res.status===401||res.status===403){ setSave("warn","GitHub auth failed — check the token in Sync."); return false; }
+    if(!res.ok){ setSave("warn","Couldn\u2019t reach GitHub — using device copy."); return false; }
+    var j=await res.json(); lsSet("jbh_sha", j.sha);
+    applyBundle(JSON.parse(b64ToUtf8(j.content))); cacheLocal(); renderAll();
+    if(!silent) setSave("ok","Pulled latest from GitHub \u2713");
+    return true;
+  }catch(e){ setSave("warn","Couldn\u2019t reach GitHub — using device copy."); return false; }
+}
+async function handleConflict(){
+  try{
+    var res=await fetch(apiUrl()+"?ref="+encodeURIComponent(cfg.branch), {headers:ghHeaders()});
+    if(!res.ok){ setSave("warn","Sync conflict — couldn\u2019t read remote. Saved on device."); return; }
+    var j=await res.json(); lsSet("jbh_sha", j.sha);
+    var remote=JSON.parse(b64ToUtf8(j.content));
+    var rTs=remote.ts?new Date(remote.ts).toLocaleString():"unknown";
+    window._remoteConflict=remote;
+    showModal('<h3>Two copies differ</h3>'+
+      '<div class="statusline warn">The other device saved changes since this one last synced.</div>'+
+      '<div class="hint">Remote (GitHub) last saved: <b>'+rTs+'</b>. Choose which to keep — the other is overwritten.</div>'+
+      '<div class="modal-btns"><button class="mb-cancel" onclick="resolveConflict(\'remote\')">Take GitHub copy</button>'+
+        '<button class="mb-save" onclick="resolveConflict(\'local\')">Keep this device</button></div>');
+  }catch(e){ setSave("warn","Sync conflict — saved on device."); }
+}
+function resolveConflict(which){
+  closeModal();
+  if(which==="remote"){ applyBundle(window._remoteConflict); cacheLocal(); renderAll(); setSave("ok","Took GitHub copy \u2713"); }
+  else { setSave("","Re-syncing this device\u2026"); pushToGitHub(); }
+  window._remoteConflict=null;
+}
+
+function openSync(){
+  var connected=ghConfigured();
+  var last=lsGet("jbh_lastsync"); var lastTxt=last?new Date(Number(last)).toLocaleString():"never";
+  showModal('<h3>GitHub sync</h3>'+
+    '<div class="statusline '+(connected?'ok':'')+'">'+(connected?('Connected: '+esc(cfg.owner)+'/'+esc(cfg.repo)+' \u00b7 last sync '+lastTxt):'Not connected — enter details below.')+'</div>'+
+    '<div class="hint">Uses a fine-grained token scoped to <b>one private repo</b> (Contents: read &amp; write). The token is stored only on this device. Do not enable GitHub Pages on the data repo.</div>'+
+    '<div class="field"><label>GitHub username (owner)</label><input id="sy_owner" value="'+esc(cfg.owner)+'" placeholder="your-username" autocapitalize="off" autocorrect="off"></div>'+
+    '<div class="field"><label>Repository name</label><input id="sy_repo" value="'+esc(cfg.repo)+'" placeholder="jb-health-data" autocapitalize="off" autocorrect="off"></div>'+
+    '<div class="row2"><div class="field"><label>Branch</label><input id="sy_branch" value="'+esc(cfg.branch)+'" autocapitalize="off"></div>'+
+      '<div class="field"><label>File path</label><input id="sy_path" value="'+esc(cfg.path)+'" autocapitalize="off"></div></div>'+
+    '<div class="field"><label>Access token</label><input id="sy_token" type="password" value="'+esc(cfg.token)+'" placeholder="github_pat_\u2026" autocapitalize="off" autocorrect="off"></div>'+
+    '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button><button class="mb-save" onclick="connectSync()">Test &amp; connect</button></div>'+
+    (connected?'<div class="modal-btns"><button class="mb-cancel" onclick="manualPull()">Pull now</button><button class="mb-cancel" onclick="manualPush()">Push now</button></div>'+
+      '<div class="modal-btns"><button class="mb-cancel" style="background:var(--owe);color:var(--red)" onclick="disconnectSync()">Remove token from this device</button></div>':''));
+}
+async function connectSync(){
+  cfg.owner=document.getElementById("sy_owner").value.trim();
+  cfg.repo=document.getElementById("sy_repo").value.trim();
+  cfg.branch=document.getElementById("sy_branch").value.trim()||"main";
+  cfg.path=document.getElementById("sy_path").value.trim()||"data.json";
+  cfg.token=document.getElementById("sy_token").value.trim();
+  if(!ghConfigured()){ alert("Fill in owner, repo and token."); return; }
+  lsSet("jbh_repo", JSON.stringify({owner:cfg.owner,repo:cfg.repo,branch:cfg.branch,path:cfg.path}));
+  lsSet("jbh_token", cfg.token); lsDel("jbh_sha");
+  setSave("","Connecting\u2026");
+  var ok=await pullFromGitHub(true);
+  closeModal();
+  if(ok){ // if no remote file yet, push current device data up to create it
+    if(!lsGet("jbh_sha")){ await pushToGitHub(); } else { setSave("ok","Connected & pulled latest \u2713"); }
+  }
+}
+function manualPull(){ closeModal(); pullFromGitHub(); }
+function manualPush(){ closeModal(); lsDel("jbh_sha"); setSave("","Pushing\u2026"); pullThenPush(); }
+async function pullThenPush(){ // refresh sha then overwrite remote with this device
+  try{ var res=await fetch(apiUrl()+"?ref="+encodeURIComponent(cfg.branch),{headers:ghHeaders()}); if(res.ok){ var j=await res.json(); lsSet("jbh_sha",j.sha);} }catch(e){}
+  pushToGitHub();
+}
+function disconnectSync(){ if(!confirm("Remove the token and repo settings from THIS device? Your data stays in the repo and on this device’s cache.")) return;
+  lsDel("jbh_token"); lsDel("jbh_repo"); lsDel("jbh_sha"); cfg={owner:"",repo:"",branch:"main",path:"data.json",token:""};
+  closeModal(); setSave("","Disconnected — saving on this device only."); }
+
+/* ---- sessions ---- */
+function seedDefaults(){ for(var i=0;i<CLIENTS.length;i++){ var code=CLIENTS[i][0],name=CLIENTS[i][1]; if(!data[code]) data[code]={name:name,entries:[]}; else if(!data[code].name) data[code].name=name; } seeded=true; }
+function balance(code){ var ents=(data[code]&&data[code].entries)||[],s=0; for(var i=0;i<ents.length;i++){ s+=ents[i].type==="out"?-ents[i].sessions:ents[i].sessions; } return round2(s); }
+function render(){
+  if(!seeded) seedDefaults();
+  var owe=0,owingCount=0,credit=0;
+  for(var i=0;i<CLIENTS.length;i++){ var b=balance(CLIENTS[i][0]); if(b<0){owe+=-b;owingCount++;} else if(b>0){credit+=b;} }
+  document.getElementById("summary").innerHTML='<div class="sum-card"><div class="sum-num owe">'+fmt(owe)+'</div><div class="sum-label">Sessions owed to you</div></div>'+
+    '<div class="sum-card"><div class="sum-num">'+owingCount+'</div><div class="sum-label">Clients owing</div></div>'+
+    '<div class="sum-card"><div class="sum-num credit">'+fmt(credit)+'</div><div class="sum-label">Sessions in credit</div></div>';
+  var q=(document.getElementById("search").value||"").toLowerCase();
+  var openNodes=document.querySelectorAll("#view-sessions .client.open"),open={};
+  for(var k=0;k<openNodes.length;k++){ open[openNodes[k].getAttribute("data-code")]=1; }
+  var roster=[]; for(var code in data){ roster.push([code,data[code].name||code]); }
+  roster.sort(function(a,b){ return a[1].localeCompare(b[1]); });
+  var html="";
+  for(var r=0;r<roster.length;r++){ var code=roster[r][0],name=roster[r][1]; if(name.toLowerCase().indexOf(q)===-1) continue;
+    var b=balance(code),cls=b>0?"credit":(b<0?"owe":"zero"),txt=b>0?(fmt(b)+" in credit"):(b<0?("owes "+fmt(-b)):"settled");
+    var ents=((data[code]&&data[code].entries)||[]).slice().reverse(),hist="";
+    if(ents.length){ for(var e=0;e<ents.length;e++){ var en=ents[e];
+      var tag=en.type==="in"?'<span class="entry-tag in">+'+fmt(en.sessions)+'</span>':en.type==="out"?'<span class="entry-tag out">\u2212'+fmt(en.sessions)+'</span>':'<span class="entry-tag open">opening '+(en.sessions>=0?'+':'')+fmt(en.sessions)+'</span>';
+      var meta=[en.date,en.method||""].filter(Boolean).join(" \u00b7 ");
+      hist+='<div class="entry"><div class="entry-main">'+tag+'<span class="entry-meta">'+meta+'</span></div><button class="entry-del" onclick="delEntry(\''+code+'\',\''+en.id+'\')">\u2715</button></div>';
+    } } else { hist='<div class="empty-hist">No entries yet — set a starting balance below.</div>'; }
+    html+='<div class="client '+(open[code]?'open':'')+'" data-code="'+code+'"><div class="client-row" onclick="this.parentElement.classList.toggle(\'open\')">'+
+      '<span class="client-name">'+esc(name)+'</span><span class="bal '+cls+'">'+txt+'</span></div>'+
+      '<div class="client-body"><div class="actions">'+
+        '<button class="act pay" onclick="openPay(\''+code+'\',\''+js(name)+'\')">+ Payment (sessions in)</button>'+
+        '<button class="act session" onclick="openSession(\''+code+'\',\''+js(name)+'\')">\u2212 Session done</button>'+
+        '<button class="act setbal" onclick="openSetBal(\''+code+'\',\''+js(name)+'\')">Set balance</button>'+
+      '</div><div class="hist-label">History</div>'+hist+'</div></div>';
+  }
+  document.getElementById("list").innerHTML=html||'<div class="empty-hist" style="padding:20px">No clients match.</div>';
+}
+function openAdd(){ showModal('<h3>Add client</h3>'+
+  '<div class="field"><label>Name</label><input id="a_name" placeholder="e.g. Joe B." oninput="suggestCode()"></div>'+
+  '<div class="field"><label>Code (initials) — must be unique</label><input id="a_code" placeholder="JB" oninput="this.dataset.touched=1;this.value=this.value.toUpperCase()"></div>'+
+  '<div class="field"><label>Starting balance (+ credit, \u2212 owes)</label><input type="number" inputmode="decimal" step="any" id="a_bal" value="0"></div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveAdd()">Add</button></div>'); }
+function suggestCode(){ var c=document.getElementById("a_code"); if(c.dataset.touched) return; var p=document.getElementById("a_name").value.trim().split(/\s+/).filter(Boolean);
+  c.value=p.length>=2?(p[0][0]+p[p.length-1][0]).toUpperCase():p.length===1?p[0].slice(0,2).toUpperCase():""; }
+function saveAdd(){ var name=document.getElementById("a_name").value.trim(),code=(document.getElementById("a_code").value.trim()||"").toUpperCase(),bal=round2(parseFloat(document.getElementById("a_bal").value))||0;
+  if(!name){alert("Enter a name.");return;} if(!code){alert("Enter a code.");return;} if(data[code]){alert('Code "'+code+'" already used by '+(data[code].name||code)+'.');return;}
+  data[code]={name:name,entries:[]}; if(bal!==0) data[code].entries.push({id:uid(),date:today(),type:"opening",sessions:bal}); closeModal(); render(); save(); }
+function openSession(code,name){ showModal('<h3>Session done — '+esc(name)+'</h3>'+
+  '<div class="field"><label>Sessions delivered</label><input type="number" inputmode="decimal" step="any" id="s_sessions" value="1" min="0"></div>'+
+  '<div class="field"><label>Date</label><input type="date" id="s_date" value="'+today()+'"></div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveSession(\''+code+'\')">Save</button></div>'); }
+function saveSession(code){ var s=round2(parseFloat(document.getElementById("s_sessions").value)); if(!s||s<=0){closeModal();return;} data[code].entries.push({id:uid(),date:document.getElementById("s_date").value,type:"out",sessions:s}); closeModal(); render(); save(); }
+function openPay(code,name){ showModal('<h3>Payment — '+esc(name)+'</h3>'+
+  '<div class="field"><label>Sessions paid for</label><input type="number" inputmode="decimal" step="any" id="m_sessions" value="1" min="0"></div>'+
+  '<div class="field"><label>Method</label><select id="m_method"><option>Bank transfer</option><option>Cash</option></select></div>'+
+  '<div class="field"><label>Date</label><input type="date" id="m_date" value="'+today()+'"></div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="savePay(\''+code+'\')">Save</button></div>'); }
+function savePay(code){ var s=round2(parseFloat(document.getElementById("m_sessions").value)); if(!s||s<=0){closeModal();return;} data[code].entries.push({id:uid(),date:document.getElementById("m_date").value,type:"in",sessions:s,method:document.getElementById("m_method").value}); closeModal(); render(); save(); }
+function openSetBal(code,name){ showModal('<h3>Set balance — '+esc(name)+'</h3>'+
+  '<div class="field"><label>Current balance. + = in credit, \u2212 = owes you.</label><input type="number" inputmode="decimal" step="any" id="m_bal" value="'+balance(code)+'"></div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveBal(\''+code+'\')">Save</button></div>'); }
+function saveBal(code){ var target=round2(parseFloat(document.getElementById("m_bal").value))||0;
+  var ents=data[code].entries.filter(function(e){return e.type!=="opening";}),nonOpening=0;
+  for(var i=0;i<ents.length;i++){ nonOpening+=ents[i].type==="out"?-ents[i].sessions:ents[i].sessions; }
+  var opening=round2(target-nonOpening); if(opening!==0) ents.unshift({id:uid(),date:today(),type:"opening",sessions:opening});
+  data[code].entries=ents; closeModal(); render(); save(); }
+function delEntry(code,id){ data[code].entries=data[code].entries.filter(function(e){return e.id!==id;}); render(); save(); }
+function openQuickLog(){ showModal('<h3>Log today</h3>'+
+  '<div class="hint"><b>Out</b> = clients seen (comma-separated initials), each \u22121 — add a number for part/extra ("AC 1.5"). <b>In</b> = payments, one per line: <code>INITIALS sessions method</code>. Unknown codes are skipped.</div>'+
+  '<div class="field"><label>Date</label><input type="date" id="ql_date" value="'+today()+'" oninput="qlPreview()"></div>'+
+  '<div class="field"><label>Sessions done (out)</label><input id="ql_out" placeholder="AC, CP, EL" oninput="qlPreview()"></div>'+
+  '<div class="field"><label>Payments (in)</label><textarea id="ql_in" placeholder="CP 2 Bank transfer&#10;RC 8 Cash" oninput="qlPreview()"></textarea></div>'+
+  '<div id="ql_preview" class="hint"></div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="applyQuickLog()">Apply</button></div>'); qlPreview(); }
+function parseQuickLog(){ var outRaw=(document.getElementById("ql_out").value||""),inRaw=(document.getElementById("ql_in").value||""),outs=[],ins=[],unknown=[];
+  outRaw.split(",").forEach(function(tok){ tok=tok.trim(); if(!tok) return; var m=tok.split(/\s+/),code=m[0].toUpperCase(),n=m.length>1?round2(parseFloat(m[1])):1; if(!n||n<=0)n=1; if(!data[code]){unknown.push(code);return;} outs.push({code:code,sessions:n}); });
+  inRaw.split(/[\n,]/).forEach(function(tok){ tok=tok.trim(); if(!tok) return; var m=tok.split(/\s+/),code=m[0].toUpperCase(),n=m.length>1?round2(parseFloat(m[1])):1; if(!n||n<=0)n=1; var method=m.slice(2).join(" ")||"Bank transfer"; if(!data[code]){unknown.push(code);return;} ins.push({code:code,sessions:n,method:method}); });
+  return {outs:outs,ins:ins,unknown:unknown}; }
+function qlPreview(){ var p=parseQuickLog(),el=document.getElementById("ql_preview"); if(!el) return; var bits=[];
+  if(p.outs.length) bits.push('<b>'+p.outs.length+' out:</b> '+p.outs.map(function(o){return data[o.code].name+' \u2212'+fmt(o.sessions);}).join(", "));
+  if(p.ins.length) bits.push('<b>'+p.ins.length+' in:</b> '+p.ins.map(function(o){return data[o.code].name+' +'+fmt(o.sessions)+' '+o.method;}).join(", "));
+  if(p.unknown.length) bits.push('<span style="color:var(--red)">\u26a0 Unknown, will skip: '+p.unknown.join(", ")+'</span>');
+  el.innerHTML=bits.length?bits.join("<br>"):"Nothing to log yet."; }
+function applyQuickLog(){ var p=parseQuickLog(); if(!p.outs.length&&!p.ins.length){closeModal();return;} var d=document.getElementById("ql_date").value||today();
+  p.outs.forEach(function(o){ data[o.code].entries.push({id:uid(),date:d,type:"out",sessions:o.sessions}); });
+  p.ins.forEach(function(o){ data[o.code].entries.push({id:uid(),date:d,type:"in",sessions:o.sessions,method:o.method}); });
+  closeModal(); render(); save(); var msg="Logged "+p.outs.length+" out and "+p.ins.length+" in."; if(p.unknown.length) msg+="\nSkipped: "+p.unknown.join(", "); alert(msg); }
+
+/* ---- mileage ---- */
+function tripMiles(t){ var s=0; (t.legs||[]).forEach(function(l){ s+=Number(l.miles)||0; }); return round2(s); }
+function mapsUrl(from,to){ return "https://www.google.com/maps/dir/"+encodeURIComponent((from||"").trim())+"/"+encodeURIComponent((to||"").trim()); }
+function renderMileage(){
+  document.getElementById("ratechip").textContent="Rate: "+gbp(mileage.rate)+"/mi";
+  var totMiles=0,totClaim=0,days=(mileage.trips||[]).length;
+  (mileage.trips||[]).forEach(function(t){ var m=tripMiles(t); totMiles+=m; totClaim+=m*mileage.rate; });
+  document.getElementById("m_summary").innerHTML='<div class="sum-card"><div class="sum-num">'+fmt(totMiles)+'</div><div class="sum-label">Business miles</div></div>'+
+    '<div class="sum-card"><div class="sum-num green">'+gbp(totClaim)+'</div><div class="sum-label">Mileage claim</div></div>'+
+    '<div class="sum-card"><div class="sum-num">'+days+'</div><div class="sum-label">Days logged</div></div>';
+  var trips=(mileage.trips||[]).slice().sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); }),html="";
+  if(!trips.length) html='<div class="empty-hist" style="padding:20px">No journeys yet — tap \u201c+ Day\u201d.</div>';
+  for(var i=0;i<trips.length;i++){ var t=trips[i],m=tripMiles(t),claim=m*mileage.rate,legHtml="";
+    (t.legs||[]).forEach(function(l){ var route=esc(l.from||"?")+' \u2192 '+esc(l.to||"?"),pcs=[l.fromPC,l.toPC].filter(Boolean).join(" \u2192 ");
+      legHtml+='<div class="leg"><div class="leg-route"><b>'+route+'</b>'+(pcs?'<div class="entry-meta">'+esc(pcs)+'</div>':'')+'</div><span class="leg-miles">'+fmt(l.miles||0)+' mi</span><a class="leg-maps" href="'+mapsUrl(l.fromPC||l.from,l.toPC||l.to)+'" target="_blank" rel="noopener">Maps</a></div>'; });
+    if(!legHtml) legHtml='<div class="empty-hist">No legs.</div>';
+    html+='<div class="client" data-tid="'+t.id+'"><div class="client-row" onclick="this.parentElement.classList.toggle(\'open\')">'+
+      '<span><span class="client-name">'+esc(dayOf(t.date)+" "+(t.date||""))+'</span><div class="client-sub">'+(t.legs||[]).length+' leg(s)</div></span>'+
+      '<span class="bal navy">'+fmt(m)+' mi \u00b7 '+gbp(claim)+'</span></div>'+
+      '<div class="client-body"><div class="hist-label">Journey</div>'+legHtml+
+      '<div class="actions"><button class="act edit" onclick="openTrip(\''+t.id+'\')">Edit day</button><button class="act del" onclick="delTrip(\''+t.id+'\')">Delete day</button></div></div></div>';
+  }
+  document.getElementById("m_list").innerHTML=html;
+}
+var editLegs=[],editTripId=null;
+function openRate(){ showModal('<h3>Mileage rate</h3>'+
+  '<div class="hint">£ per mile applied to all legs. HMRC flat rate is £0.45 for the first 10,000 business miles, £0.25 after. Use £0.45 unless your accountant set a different basis.</div>'+
+  '<div class="field"><label>Rate (£/mile)</label><input type="number" inputmode="decimal" step="any" id="rt_val" value="'+mileage.rate+'"></div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveRate()">Save</button></div>'); }
+function saveRate(){ var v=parseFloat(document.getElementById("rt_val").value); if(!(v>0)){closeModal();return;} mileage.rate=round2(v); closeModal(); renderMileage(); saveM(); }
+function openTrip(id){ editTripId=id||null;
+  if(id){ var t=(mileage.trips||[]).filter(function(x){return x.id===id;})[0]; editLegs=(t&&t.legs?JSON.parse(JSON.stringify(t.legs)):[]); var dt=t?t.date:today(); }
+  else { editLegs=[{id:uid(),from:"Home",fromPC:"",to:"",toPC:"",miles:""}]; var dt=today(); }
+  showModal('<h3>'+(id?'Edit day':'Add day')+'</h3>'+
+    '<div class="field"><label>Date</label><input type="date" id="tp_date" value="'+dt+'"></div>'+
+    '<div class="hint">Add each leg in order. New legs auto-fill From with the previous leg\u2019s To. Tap <b>Maps</b> to look up the miles, then type them in.</div>'+
+    '<div id="legRows"></div><button class="addleg" onclick="addLeg()">+ Add leg</button>'+
+    '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveTrip()">Save day</button></div>'); renderLegRows(); }
+function renderLegRows(){ var h="";
+  for(var i=0;i<editLegs.length;i++){ var l=editLegs[i];
+    h+='<div class="legedit"><div class="lehead"><b>Leg '+(i+1)+'</b><div class="lertools"><button class="le-maps" onclick="openLegMaps('+i+')">Maps</button><button class="le-x" onclick="delLeg('+i+')">\u2715</button></div></div>'+
+      '<div class="row2"><div class="le-field"><label>From</label><input value="'+esc(l.from)+'" oninput="updLeg('+i+',\'from\',this.value)"></div><div class="le-field"><label>From postcode</label><input value="'+esc(l.fromPC)+'" oninput="updLeg('+i+',\'fromPC\',this.value)" placeholder="BA2 7BB"></div></div>'+
+      '<div class="row2"><div class="le-field"><label>To</label><input value="'+esc(l.to)+'" oninput="updLeg('+i+',\'to\',this.value)"></div><div class="le-field"><label>To postcode</label><input value="'+esc(l.toPC)+'" oninput="updLeg('+i+',\'toPC\',this.value)" placeholder="BS1 5TR"></div></div>'+
+      '<div class="le-field"><label>Miles (from Maps)</label><input type="number" inputmode="decimal" step="any" value="'+esc(l.miles)+'" oninput="updLeg('+i+',\'miles\',this.value)" placeholder="0.0"></div></div>'; }
+  document.getElementById("legRows").innerHTML=h; }
+function updLeg(i,f,v){ if(editLegs[i]) editLegs[i][f]=v; }
+function addLeg(){ var p=editLegs[editLegs.length-1]||{}; editLegs.push({id:uid(),from:p.to||"",fromPC:p.toPC||"",to:"",toPC:"",miles:""}); renderLegRows(); }
+function delLeg(i){ editLegs.splice(i,1); renderLegRows(); }
+function openLegMaps(i){ var l=editLegs[i]||{}; window.open(mapsUrl(l.fromPC||l.from,l.toPC||l.to),"_blank","noopener"); }
+function saveTrip(){ var dt=document.getElementById("tp_date").value||today();
+  var legs=editLegs.filter(function(l){ return (l.from||l.to||l.fromPC||l.toPC||l.miles!==""); }).map(function(l){ return {id:l.id||uid(),from:(l.from||"").trim(),fromPC:(l.fromPC||"").trim(),to:(l.to||"").trim(),toPC:(l.toPC||"").trim(),miles:round2(parseFloat(l.miles))||0}; });
+  if(!legs.length){ closeModal(); return; }
+  if(editTripId){ for(var i=0;i<mileage.trips.length;i++){ if(mileage.trips[i].id===editTripId){ mileage.trips[i].date=dt; mileage.trips[i].legs=legs; break; } } }
+  else { mileage.trips.push({id:uid(),date:dt,legs:legs}); }
+  closeModal(); renderMileage(); saveM(); }
+function delTrip(id){ if(!confirm("Delete this whole day?")) return; mileage.trips=mileage.trips.filter(function(t){return t.id!==id;}); renderMileage(); saveM(); }
+function exportMileage(){ var rows=[["Date","Day","From","To","From PC","To PC","Miles","Rate","Claim"]];
+  (mileage.trips||[]).slice().sort(function(a,b){return (a.date||"").localeCompare(b.date||"");}).forEach(function(t){ (t.legs||[]).forEach(function(l){ var m=Number(l.miles)||0; rows.push([t.date,dayOf(t.date),l.from,l.to,l.fromPC,l.toPC,m,mileage.rate,round2(m*mileage.rate)]); }); });
+  downloadCSV(rows,"JB_Mileage_"+today()+".csv"); }
+
+/* ---- finance ---- */
+function txnAmount(t){ return round2((Number(t.amountPre)||0)*((Number(t.pct)||0)/100)); }
+function renderFinance(){ var income=0,expense=0;
+  (finance.txns||[]).forEach(function(t){ var a=txnAmount(t); if(t.type==="Income") income+=a; else expense+=a; });
+  var mClaim=0; (mileage.trips||[]).forEach(function(t){ mClaim+=tripMiles(t)*mileage.rate; });
+  var net=round2(income-expense-mClaim);
+  document.getElementById("f_summary").innerHTML='<div class="sum-card"><div class="sum-num green">'+gbp(income)+'</div><div class="sum-label">Income</div></div>'+
+    '<div class="sum-card"><div class="sum-num red">'+gbp(expense)+'</div><div class="sum-label">Expenses</div></div>'+
+    '<div class="sum-card"><div class="sum-num '+(net<0?'red':'')+'">'+gbp(net)+'</div><div class="sum-label">Net (incl. mileage)</div></div>';
+  var byMonth={},byCat={};
+  (finance.txns||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7),a=txnAmount(t); if(!byMonth[mo]) byMonth[mo]={inc:0,exp:0}; if(t.type==="Income") byMonth[mo].inc+=a; else byMonth[mo].exp+=a; if(t.type==="Expense") byCat[t.category]=(byCat[t.category]||0)+a; });
+  var months=Object.keys(byMonth).filter(Boolean).sort(),mh="";
+  months.forEach(function(mo){ var x=byMonth[mo]; mh+='<div class="mini-row"><span>'+mo+'</span><span>'+gbp(x.inc-x.exp)+'  ('+gbp(x.inc)+' in / '+gbp(x.exp)+' out)</span></div>'; });
+  var cats=Object.keys(byCat).sort(function(a,b){return byCat[b]-byCat[a];}),ch="";
+  cats.forEach(function(c){ ch+='<div class="mini-row"><span>'+esc(c)+'</span><span>'+gbp(byCat[c])+'</span></div>'; });
+  document.getElementById("f_breakdown").innerHTML=(months.length?'<h4>Monthly (net)</h4>'+mh:'')+(cats.length?'<h4>Expenses by category</h4>'+ch:'');
+  var q=(document.getElementById("f_search").value||"").toLowerCase();
+  var txns=(finance.txns||[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"");}),html="";
+  txns.forEach(function(t){ var hay=((t.description||"")+" "+(t.category||"")+" "+(t.notes||"")+" "+(t.method||"")).toLowerCase(); if(q&&hay.indexOf(q)===-1) return;
+    var a=txnAmount(t),isInc=t.type==="Income",tag=isInc?'<span class="entry-tag in">+'+gbp(a)+'</span>':'<span class="entry-tag exp">\u2212'+gbp(a)+'</span>';
+    var pct=(Number(t.pct)||0),pctNote=pct!==100?(" \u00b7 "+pct+"% biz"):"",meta=[t.date,t.category,t.method].filter(Boolean).join(" \u00b7 ")+pctNote;
+    html+='<div class="client"><div class="client-row" onclick="this.parentElement.classList.toggle(\'open\')"><span><span class="client-name" style="font-size:14px">'+esc(t.description||"(no description)")+'</span><div class="client-sub">'+esc(meta)+'</div></span>'+tag+'</div>'+
+      '<div class="client-body"><div class="entry"><span class="entry-meta">Gross '+gbp(t.amountPre)+' \u00d7 '+pct+'% = <b>'+gbp(a)+'</b>'+(t.notes?' \u00b7 '+esc(t.notes):'')+'</span></div>'+
+      '<div class="actions"><button class="act edit" onclick="openTxn(\''+t.id+'\')">Edit</button><button class="act del" onclick="delTxn(\''+t.id+'\')">Delete</button></div></div></div>'; });
+  document.getElementById("f_list").innerHTML=html||'<div class="empty-hist" style="padding:20px">No transactions'+(q?' match.':' yet — tap \u201c+ Transaction\u201d.')+'</div>'; }
+function openTxn(id){ var t=id?(finance.txns||[]).filter(function(x){return x.id===id;})[0]:null;
+  var catOpts=CATEGORIES.map(function(c){return '<option'+(t&&t.category===c?' selected':'')+'>'+esc(c)+'</option>';}).join("");
+  var methOpts=METHODS.map(function(m){return '<option'+(t&&t.method===m?' selected':'')+'>'+esc(m)+'</option>';}).join("");
+  showModal('<h3>'+(id?'Edit transaction':'Add transaction')+'</h3>'+
+    '<div class="field"><label>Date</label><input type="date" id="tx_date" value="'+(t?t.date:today())+'"></div>'+
+    '<div class="field"><label>Description</label><input id="tx_desc" value="'+esc(t?t.description:"")+'" placeholder="e.g. Alyson C. / Sky Mobile"></div>'+
+    '<div class="row2"><div class="field"><label>Type</label><select id="tx_type"><option'+(t&&t.type==="Income"?' selected':'')+'>Income</option><option'+(t&&t.type==="Expense"?' selected':'')+'>Expense</option></select></div><div class="field"><label>Category</label><select id="tx_cat">'+catOpts+'</select></div></div>'+
+    '<div class="row2"><div class="field"><label>Amount (£)</label><input type="number" inputmode="decimal" step="any" id="tx_amt" value="'+(t?t.amountPre:"")+'"></div><div class="field"><label>% business use</label><input type="number" inputmode="decimal" step="any" id="tx_pct" value="'+(t?t.pct:100)+'"></div></div>'+
+    '<div class="field"><label>Payment method</label><select id="tx_method">'+methOpts+'</select></div>'+
+    '<div class="field"><label>Notes</label><input id="tx_notes" value="'+esc(t?t.notes:"")+'" placeholder="optional"></div>'+
+    '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveTxn(\''+(id||"")+'\')">Save</button></div>'); }
+function saveTxn(id){ var rec={ date:document.getElementById("tx_date").value||today(), description:document.getElementById("tx_desc").value.trim(), type:document.getElementById("tx_type").value, category:document.getElementById("tx_cat").value, amountPre:round2(parseFloat(document.getElementById("tx_amt").value))||0, pct:round2(parseFloat(document.getElementById("tx_pct").value)), method:document.getElementById("tx_method").value, notes:document.getElementById("tx_notes").value.trim() };
+  if(isNaN(rec.pct)) rec.pct=100; if(!rec.amountPre){ alert("Enter an amount."); return; }
+  if(id){ for(var i=0;i<finance.txns.length;i++){ if(finance.txns[i].id===id){ rec.id=id; finance.txns[i]=rec; break; } } } else { rec.id=uid(); finance.txns.push(rec); }
+  closeModal(); renderFinance(); saveF(); }
+function delTxn(id){ if(!confirm("Delete this transaction?")) return; finance.txns=finance.txns.filter(function(t){return t.id!==id;}); renderFinance(); saveF(); }
+function exportFinance(){ var rows=[["Date","Description","Category","Type","Amount (pre-%)","% Business use","Amount (£)","Payment Method","Notes"]];
+  (finance.txns||[]).slice().sort(function(a,b){return (a.date||"").localeCompare(b.date||"");}).forEach(function(t){ rows.push([t.date,t.description,t.category,t.type,Number(t.amountPre)||0,Number(t.pct)||0,txnAmount(t),t.method,t.notes]); });
+  downloadCSV(rows,"JB_Transactions_"+today()+".csv"); }
+
+/* ---- csv ---- */
+function csvCell(v){ v=v==null?"":String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function downloadCSV(rows,filename){ var csv=rows.map(function(r){return r.map(csvCell).join(",");}).join("\r\n");
+  try{ var blob=new Blob([csv],{type:"text/csv"}),url=URL.createObjectURL(blob),a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},200); }
+  catch(e){ showModal('<h3>Copy CSV</h3><div class="hint">Download blocked — copy this into a .csv.</div><div class="field"><textarea readonly style="min-height:160px">'+esc(csv)+'</textarea></div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); } }
+
+/* ---- backup / restore ---- */
+function openBackup(){ var code=JSON.stringify(bundle());
+  showModal('<h3>Backup</h3><div class="hint">Everything in one code. Tap Copy, paste into Notes. Independent of GitHub — your offline safety net.</div><div class="field"><textarea id="b_text" readonly>'+esc(code)+'</textarea></div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button><button class="mb-save" onclick="copyBackup()">Copy</button></div>'); }
+function copyBackup(){ var ta=document.getElementById("b_text"); ta.focus(); ta.select(); ta.setSelectionRange(0,999999); var ok=false; try{ok=document.execCommand("copy");}catch(e){} if(navigator.clipboard){try{navigator.clipboard.writeText(ta.value);ok=true;}catch(e){}} alert(ok?"Copied. Paste it into your Notes.":"Select the text and copy manually."); }
+function openRestore(){ showModal('<h3>Restore</h3><div class="hint">Paste a backup code and tap Restore. Replaces what\u2019s on screen, then saves/syncs.</div><div class="field"><textarea id="r_text" placeholder="Paste backup code here"></textarea></div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="doRestore()">Restore</button></div>'); }
+function doRestore(){ var txt=document.getElementById("r_text").value.trim(); if(!txt){closeModal();return;}
+  try{ var d=JSON.parse(txt); if(typeof d!=="object"||!d) throw new Error("bad"); applyBundle(d); dataLoaded=true; closeModal(); renderAll(); persist(); alert("Restored."); }
+  catch(e){ alert("That code couldn\u2019t be read. Make sure you pasted the whole thing."); } }
+
+/* ---- modal ---- */
+function showModal(html){ document.getElementById("modalBox").innerHTML=html; document.getElementById("modal").classList.add("show"); }
+function closeModal(){ document.getElementById("modal").classList.remove("show"); }
+document.getElementById("modal").addEventListener("click",function(e){ if(e.target.id==="modal") closeModal(); });
+
+/* ---- startup ---- */
+function startup(){ loadCfg();
+  try{ var c=lsGet("jbh_cache"); if(c) applyBundle(JSON.parse(c)); }catch(e){}
+  seedDefaults(); renderAll(); dataLoaded=true;
+  if(ghConfigured()){ setSave("","Connected — pulling latest\u2026"); pullFromGitHub(); }
+  else { setSave("","Saved on this device. Tap Sync to enable phone\u2194PC sync."); }
+}
+startup();
+</script>
+</body>
+</html>
