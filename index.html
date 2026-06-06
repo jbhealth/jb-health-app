@@ -118,6 +118,11 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 .note{max-width:760px;margin:0 auto;padding:0 18px 40px;color:var(--grey);font-size:11px;line-height:1.6;}
 
 .prog-editor{display:none;position:fixed;inset:0;z-index:200;background:#fff;flex-direction:column;}
+.client-view{display:none;position:fixed;inset:0;z-index:210;background:var(--navy);flex-direction:column;}
+.client-view.show{display:flex;}
+.client-view-bar{flex:none;background:var(--navy);display:flex;align-items:flex-end;padding:6px 12px 8px;padding-top:calc(env(safe-area-inset-top) + 6px);}
+.cv-close{background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:14px;font-weight:600;font-family:var(--sans);cursor:pointer;}
+.client-view iframe{flex:1;width:100%;border:0;background:var(--warm);}
 .prog-editor.show{display:flex;}
 .prog-bar{display:flex;align-items:center;gap:8px;background:var(--navy);padding:calc(10px + env(safe-area-inset-top)) 12px 10px;}
 .prog-bar span#progTitle{color:#fff;font-family:var(--serif);font-size:15px;font-weight:700;margin-right:auto;}
@@ -188,6 +193,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 </div>
 
 <div class="modal" id="modal"><div class="modal-box" id="modalBox"></div></div>
+<div class="client-view" id="clientView"><div class="client-view-bar"><button class="cv-close" onclick="closeClientView()">‹ Done</button></div><iframe id="cvFrame" title="Client program"></iframe></div>
 
 <script>
 var CLIENTS = [
@@ -670,6 +676,8 @@ function progHeaders(){ return {"Authorization":"Bearer "+progToken(),"Accept":"
 function masterPath(code){ return "JB_"+code+"_Programs_Master.html"; }
 function masterApi(code){ return "https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/"+masterPath(code); }
 function clientUrl(code){ return "https://jbhealth.github.io/programs/JB_"+code+"_Programs_Client.html"; }
+function openClientView(code){ var f=document.getElementById("cvFrame"); f.src=clientUrl(code); document.getElementById("clientView").classList.add("show"); }
+function closeClientView(){ document.getElementById("clientView").classList.remove("show"); document.getElementById("cvFrame").src="about:blank"; }
 
 function liveSig(htmlStr){
   var d=document.createElement("div"); d.innerHTML=htmlStr; var sig=[];
@@ -692,7 +700,7 @@ function renderPrograms(){
     html+='<div class="client"><div class="client-row" style="cursor:default">'+
       '<span class="client-name">'+esc(name)+' <span class="entry-meta">('+code+')</span></span>'+
       '<span style="display:flex;gap:6px;flex:none">'+
-        '<button class="act setbal" style="flex:none;min-width:0;padding:8px 12px" onclick="window.open(\''+clientUrl(code)+'\',\'_blank\',\'noopener\')">Client</button>'+
+        '<button class="act setbal" style="flex:none;min-width:0;padding:8px 12px" onclick="openClientView(\''+code+'\')">Client</button>'+
         '<button class="act session" style="flex:none;min-width:0;padding:8px 12px" onclick="openMaster(\''+code+'\')">Master</button>'+
       '</span></div></div>';
   });
