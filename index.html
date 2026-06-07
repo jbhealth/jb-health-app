@@ -196,13 +196,38 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 <div class="client-view" id="clientView"><div class="client-view-bar"><button class="cv-close" onclick="closeClientView()">‹ Done</button></div><iframe id="cvFrame" title="Client program"></iframe></div>
 
 <script>
-var CLIENTS = [
-  ["AM","Alizon M."],["AC","Alyson C."],["AB","Anna B."],["AL","Anne L."],["BW","Biddy W."],
-  ["CP","Caroline P."],["CM","Carrie M."],["CB","Claire B."],["EC","Elaine C."],["EL","Elaine L."],
-  ["FH","Fiona H."],["JJ","Jan J."],["KH","Karen H."],["KB","Ken B."],["LS","Lucy S."],
-  ["MH","Martin H."],["NS","Nikki S."],["RC","Rob C."],["SP","Shaun P."],["SD","Simon D."],
-  ["SB","Steve B."],["HH","Harvey H."]
-];
+var CLIENT_NAMES = {
+  "AM":"Alizon M.","AC":"Alyson C.","AB":"Anna B.","AL":"Anne L.","BW":"Biddy W.",
+  "CP":"Caroline P.","CM":"Carrie M.","CB":"Claire B.","EC":"Elaine C.","EL":"Elaine L.",
+  "FH":"Fiona H.","FL":"Fiona L.","JJ":"Jan J.","JK":"Jackie K.","JB":"Jenny B.",
+  "KH":"Karen H.","KB":"Ken B.","LS":"Lucy S.","MF":"Margaret F.","MH":"Martin H.",
+  "NS":"Nikki S.","RC":"Rob C.","SP":"Shaun P.","SD":"Simon D.","SB":"Steve B.","HH":"Harvey H."
+};
+/* Seed/Sessions list derived from the name map (single place for names). */
+var CLIENTS = Object.keys(CLIENT_NAMES).map(function(c){ return [c, CLIENT_NAMES[c]]; });
+/* --- Programs tab self-syncs its roster from the public dashboard --- */
+/* Existence comes from programs/index.html (auto-updated at onboarding); names */
+/* resolve: tracker data -> name map -> the code itself, so nobody is ever hidden. */
+var ROSTER_URL = "https://jbhealth.github.io/programs/index.html";
+var ROSTER_CODES = Object.keys(CLIENT_NAMES);
+function rosterName(code){ return (data[code] && data[code].name) || CLIENT_NAMES[code] || code; }
+function loadRoster(){
+  try{ var c=lsGet("jbh_roster"); if(c){ var a=JSON.parse(c); if(a && a.length){ ROSTER_CODES=a; } } }catch(e){}
+  renderPrograms();
+  try{
+    var xhr=new XMLHttpRequest();
+    xhr.open("GET", ROSTER_URL + "?t=" + Date.now(), true);
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState!==4) return;
+      if(xhr.status>=200 && xhr.status<300){
+        var codes=[], rx=/code:'([A-Za-z]+)'\s*,\s*stream:'in-person'/g, m;
+        while((m=rx.exec(xhr.responseText))){ codes.push(m[1]); }
+        if(codes.length){ ROSTER_CODES=codes; try{ lsSet("jbh_roster", JSON.stringify(codes)); }catch(e){} renderPrograms(); }
+      }
+    };
+    xhr.send();
+  }catch(e){}
+}
 var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Cost of Goods Sold","Advertising & Marketing","Professional Fees","Software & Subscriptions","Bank Charges","Telephone & Internet","Home Office","Training & Courses","Insurance","Repairs & Maintenance","Other Allowable Expenses","Non-allowable (Personal)"];
 var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
 
@@ -695,7 +720,7 @@ function renderPrograms(){
   var el=document.getElementById("progStatus"); if(el) el.textContent = progToken()? "Token set \u2713" : "No token";
   var listEl=document.getElementById("prog_list"); if(!listEl) return;
   var q=(document.getElementById("prog_search").value||"").toLowerCase();
-  var roster=CLIENTS.slice().sort(function(a,b){return a[1].localeCompare(b[1]);}), html="";
+  var roster=ROSTER_CODES.map(function(code){return [code, rosterName(code)];}).sort(function(a,b){return a[1].localeCompare(b[1]);}), html="";
   roster.forEach(function(c){ var code=c[0],name=c[1]; if(name.toLowerCase().indexOf(q)===-1) return;
     html+='<div class="client"><div class="client-row" style="cursor:default">'+
       '<span class="client-name">'+esc(name)+' <span class="entry-meta">('+code+')</span></span>'+
@@ -817,7 +842,7 @@ window.addEventListener("popstate", function(){
 });
 function startup(){ loadCfg();
   try{ var c=lsGet("jbh_cache"); if(c) applyBundle(JSON.parse(c)); }catch(e){}
-  seedDefaults(); renderAll(); dataLoaded=true; switchTab("programs"); _historyTrap();
+  seedDefaults(); renderAll(); loadRoster(); dataLoaded=true; switchTab("programs"); _historyTrap();
   if(ghConfigured()){ setSave("","Connected — pulling latest\u2026"); pullFromGitHub(); }
   else { setSave("","Saved on this device. Tap Sync to enable phone\u2194PC sync."); }
 }
