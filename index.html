@@ -196,37 +196,26 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 <div class="client-view" id="clientView"><div class="client-view-bar"><button class="cv-close" onclick="closeClientView()">‹ Done</button></div><iframe id="cvFrame" title="Client program"></iframe></div>
 
 <script>
+/* Public file — INITIALS ONLY, no real names. Friendly names live in the private
+   synced data.json (data[code].name) and display from there via rosterName(). */
 var CLIENT_NAMES = {
-  "AM":"Alizon M.","AC":"Alyson C.","AB":"Anna B.","AL":"Anne L.","BW":"Biddy W.",
-  "CP":"Caroline P.","CM":"Carrie M.","CB":"Claire B.","EC":"Elaine C.","EL":"Elaine L.",
-  "FH":"Fiona H.","FL":"Fiona L.","JJ":"Jan J.","JK":"Jackie K.","JB":"Jenny B.",
-  "KH":"Karen H.","KB":"Ken B.","LS":"Lucy S.","MF":"Margaret F.","MH":"Martin H.",
-  "NS":"Nikki S.","RC":"Rob C.","SP":"Shaun P.","SD":"Simon D.","SB":"Steve B.","HH":"Harvey H."
+  "AM":"AM","AC":"AC","AB":"AB","AL":"AL","BW":"BW",
+  "CP":"CP","CM":"CM","CB":"CB","EC":"EC","EL":"EL",
+  "FH":"FH","FL":"FL","JJ":"JJ","JK":"JK","JB":"JB",
+  "KH":"KH","KB":"KB","LS":"LS","MF":"MF","MH":"MH",
+  "NS":"NS","RC":"RC","SP":"SP","SD":"SD","SB":"SB","HH":"HH"
 };
 /* Seed/Sessions list derived from the name map (single place for names). */
 var CLIENTS = Object.keys(CLIENT_NAMES).map(function(c){ return [c, CLIENT_NAMES[c]]; });
-/* --- Programs tab self-syncs its roster from the public dashboard --- */
-/* Existence comes from programs/index.html (auto-updated at onboarding); names */
-/* resolve: tracker data -> name map -> the code itself, so nobody is ever hidden. */
-var ROSTER_URL = "https://jbhealth.github.io/programs/index.html";
+/* --- Programs tab roster: CLIENT_NAMES is the single source. --- */
+/* Public-dashboard auto-sync removed June 2026 (dashboard retired; app is the dashboard). */
+/* Names resolve: private data -> initials map -> the code itself, so nobody is ever hidden. */
 var ROSTER_CODES = Object.keys(CLIENT_NAMES);
 function rosterName(code){ return (data[code] && data[code].name) || CLIENT_NAMES[code] || code; }
 function loadRoster(){
-  try{ var c=lsGet("jbh_roster"); if(c){ var a=JSON.parse(c); if(a && a.length){ ROSTER_CODES=a; } } }catch(e){}
+  ROSTER_CODES = Object.keys(CLIENT_NAMES);
+  try{ lsDel("jbh_roster"); }catch(e){}   /* clear any stale cached roster from the old sync */
   renderPrograms();
-  try{
-    var xhr=new XMLHttpRequest();
-    xhr.open("GET", ROSTER_URL + "?t=" + Date.now(), true);
-    xhr.onreadystatechange=function(){
-      if(xhr.readyState!==4) return;
-      if(xhr.status>=200 && xhr.status<300){
-        var codes=[], rx=/code:'([A-Za-z]+)'\s*,\s*stream:'in-person'/g, m;
-        while((m=rx.exec(xhr.responseText))){ codes.push(m[1]); }
-        if(codes.length){ ROSTER_CODES=codes; try{ lsSet("jbh_roster", JSON.stringify(codes)); }catch(e){} renderPrograms(); }
-      }
-    };
-    xhr.send();
-  }catch(e){}
 }
 var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Cost of Goods Sold","Advertising & Marketing","Professional Fees","Software & Subscriptions","Bank Charges","Telephone & Internet","Home Office","Training & Courses","Insurance","Repairs & Maintenance","Other Allowable Expenses","Non-allowable (Personal)"];
 var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
@@ -586,7 +575,7 @@ function openTxn(id){ var t=id?(finance.txns||[]).filter(function(x){return x.id
   var methOpts=METHODS.map(function(m){return '<option'+(t&&t.method===m?' selected':'')+'>'+esc(m)+'</option>';}).join("");
   showModal('<h3>'+(id?'Edit transaction':'Add transaction')+'</h3>'+
     '<div class="field"><label>Date</label><input type="date" id="tx_date" value="'+(t?t.date:today())+'"></div>'+
-    '<div class="field"><label>Description</label><input id="tx_desc" value="'+esc(t?t.description:"")+'" placeholder="e.g. Alyson C. / Sky Mobile"></div>'+
+    '<div class="field"><label>Description</label><input id="tx_desc" value="'+esc(t?t.description:"")+'" placeholder="e.g. Sky Mobile / fuel"></div>'+
     '<div class="row2"><div class="field"><label>Type</label><select id="tx_type"><option'+(t&&t.type==="Income"?' selected':'')+'>Income</option><option'+(t&&t.type==="Expense"?' selected':'')+'>Expense</option></select></div><div class="field"><label>Category</label><select id="tx_cat">'+catOpts+'</select></div></div>'+
     '<div class="row2"><div class="field"><label>Amount (£)</label><input type="number" inputmode="decimal" step="any" id="tx_amt" value="'+(t?t.amountPre:"")+'"></div><div class="field"><label>% business use</label><input type="number" inputmode="decimal" step="any" id="tx_pct" value="'+(t?t.pct:100)+'"></div></div>'+
     '<div class="field"><label>Payment method</label><select id="tx_method">'+methOpts+'</select></div>'+
