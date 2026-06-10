@@ -131,6 +131,16 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 .prog-act.push{background:var(--green);border-color:var(--green);}
 .prog-act:active{opacity:0.8;}
 .prog-frame{flex:1;border:none;width:100%;background:#fff;}
+  .fo-wrap{overflow-x:auto;margin:8px 0;}
+  .fo-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .fo-table th,.fo-table td{padding:6px 8px;text-align:right;border-bottom:1px solid rgba(0,0,0,0.08);white-space:nowrap;}
+  .fo-table th:first-child,.fo-table td:first-child{text-align:left;}
+  .fo-table th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.65;}
+  .fo-table .fo-cur td{opacity:.6;font-style:italic;}
+  .fo-table .fo-avg td{font-weight:700;border-top:2px solid rgba(0,0,0,0.25);}
+  .fo-proj{margin-top:12px;padding:10px;border-radius:10px;background:rgba(46,134,193,0.10);}
+  .fo-proj .mini-row span:last-child{font-weight:700;}
+  .fo-neg{color:#c0392b;} .fo-pos{color:#1e8449;}
 </style>
 </head>
 <body>
@@ -151,7 +161,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 <div class="savebar"><span class="dot off" id="syncdot"></span><span id="savestate">Starting…</span></div>
 
 <div class="view" id="view-sessions">
-  <div class="actbar"><button class="primary" onclick="openQuickLog()">Log today</button><button class="ghost" onclick="openAdd()">+ Client</button></div>
+  <div class="actbar"><button class="primary" onclick="openQuickLog()">Log today</button><button class="ghost" onclick="openAdd()">+ Client</button><button class="ghost" onclick="openSessOverview()">Overview</button></div>
   <div class="summary" id="summary"></div>
   <div class="search-wrap"><input class="search-input" id="search" placeholder="Search client…" oninput="render()"></div>
   <div class="list" id="list"></div>
@@ -167,7 +177,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 
 <div class="view" id="view-finance">
   <div class="summary" id="f_summary"></div>
-  <div class="actbar"><button class="primary" onclick="openTxn()">+ Transaction</button><button class="ghost" onclick="exportFinance()">Export CSV</button><button class="ghost" onclick="openImportFinance()">Import</button></div>
+  <div class="actbar"><button class="primary" onclick="openTxn()">+ Transaction</button><button class="ghost" onclick="exportFinance()">Export CSV</button><button class="ghost" onclick="openImportFinance()">Import</button><button class="ghost" onclick="openOverview()">Overview</button></div>
   <div class="mini" id="f_breakdown"></div>
   <div class="search-wrap"><input class="search-input" id="f_search" placeholder="Search transactions…" oninput="renderFinance()"></div>
   <div class="list" id="f_list"></div>
@@ -547,6 +557,166 @@ function exportMileage(){ var rows=[["Date","Day","From","To","From PC","To PC",
 
 /* ---- finance ---- */
 function txnAmount(t){ return round2((Number(t.amountPre)||0)*((Number(t.pct)||0)/100)); }
+function weekStart(ds){ var d=new Date(ds+"T00:00:00"); var day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); return d.toISOString().slice(0,10); }
+function soChart(labels, vals, curLast){
+  if(labels.length<2) return "";
+  var W=560,H=170,P={l:34,r:14,t:16,b:26};
+  var iw=W-P.l-P.r, ih=H-P.t-P.b;
+  var max=Math.max.apply(null,vals); if(max<=0) return "";
+  max=Math.max(5, Math.ceil(max/5)*5);
+  function X(i){ return P.l + i*iw/(labels.length-1); }
+  function Y(v){ return P.t + ih - (v/max)*ih; }
+  var s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block;margin:4px 0 10px">';
+  [0,0.5,1].forEach(function(f){ var v=max*f,y=Y(v);
+    s+='<line x1="'+P.l+'" y1="'+y+'" x2="'+(W-P.r)+'" y2="'+y+'" stroke="rgba(0,0,0,0.10)" stroke-width="1"/>';
+    s+='<text x="'+(P.l-6)+'" y="'+(y+4)+'" text-anchor="end" font-size="10" fill="rgba(0,0,0,0.55)">'+(f===0.5&&max%2?v.toFixed(1):Math.round(v))+'</text>'; });
+  var pts=labels.map(function(l,i){ return X(i)+","+Y(vals[i]); });
+  s+='<polyline points="'+pts.join(" ")+'" fill="none" stroke="#2E86C1" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  var step=Math.ceil(labels.length/8);
+  labels.forEach(function(l,i){
+    var cur=(curLast && i===labels.length-1), x=X(i), y=Y(vals[i]);
+    s+='<circle cx="'+x+'" cy="'+y+'" r="3.5" fill="'+(cur?'#FAFCFE':'#1B3F6B')+'" stroke="#1B3F6B" stroke-width="2"/>';
+    if(i%step===0 || i===labels.length-1) s+='<text x="'+x+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="rgba(0,0,0,0.6)">'+l+(cur?"*":"")+'</text>';
+    s+='<text x="'+x+'" y="'+(y-8)+'" text-anchor="middle" font-size="10" font-weight="700" fill="#1B3F6B">'+(Math.round(vals[i]*100)/100)+'</text>';
+  });
+  s+='</svg>';
+  return s;
+}
+function openSessOverview(){
+  var byW={}, byM={};
+  Object.keys(data).forEach(function(c){
+    (data[c].entries||[]).forEach(function(e){
+      if(e.type!=="out" || !e.date) return;
+      var w=weekStart(e.date), mo=e.date.slice(0,7);
+      byW[w]=(byW[w]||0)+e.sessions; byM[mo]=(byM[mo]||0)+e.sessions;
+    });
+  });
+  var weeks=Object.keys(byW).sort(), months=Object.keys(byM).sort();
+  if(!weeks.length){ showModal('<h3>Sessions overview</h3><div class="hint">No delivered sessions logged yet.</div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); return; }
+  var first=weeks[0], last=weeks[weeks.length-1];
+  var allW=[]; var d=new Date(first+"T00:00:00");
+  while(true){ var k=d.toISOString().slice(0,10); allW.push(k); if(k>=last) break; d.setDate(d.getDate()+7); }
+  if(allW.length>16) allW=allW.slice(-16);
+  var curW=weekStart(new Date().toISOString().slice(0,10)), curMo=new Date().toISOString().slice(0,7);
+  var wl=allW.map(function(w){ var p=w.split("-"),M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return (+p[2])+" "+M[(+p[1])-1]; });
+  var wv=allW.map(function(w){ return byW[w]||0; });
+  var html='<h3>Sessions overview</h3>'+soChart(wl,wv,allW[allW.length-1]===curW);
+  var doneW=allW.filter(function(w){return w<curW;});
+  var avgW=doneW.length? doneW.reduce(function(a,w){return a+(byW[w]||0);},0)/doneW.length : 0;
+  html+='<div class="fo-wrap"><table class="fo-table"><tr><th>Month</th><th>Sessions</th><th>Per week (avg)</th></tr>';
+  var doneM=0,sumM=0;
+  months.forEach(function(mo){
+    var cur=(mo>=curMo), v=byM[mo];
+    if(!cur){ doneM++; sumM+=v; }
+    var p=mo.split("-"); var dim=new Date(+p[0],+p[1],0).getDate();
+    html+='<tr class="'+(cur?'fo-cur':'')+'"><td>'+monthLabel(mo)+(cur?' *':'')+'</td><td>'+(Math.round(v*100)/100)+'</td><td>'+(Math.round(v/dim*7*10)/10)+'</td></tr>';
+  });
+  if(doneM){ var aM=sumM/doneM;
+    html+='<tr class="fo-avg"><td>Avg ('+doneM+' mo)</td><td>'+(Math.round(aM*100)/100)+'</td><td>'+(Math.round(avgW*10)/10)+'</td></tr>'; }
+  html+='</table></div>';
+  html+='<div class="hint" style="margin-top:8px">Delivered sessions only (Out entries). Weeks run Monday\u2013Sunday; chart shows the last '+allW.length+' weeks. * = in progress. The avg row\u2019s per-week figure is the true average over '+doneW.length+' completed weeks.</div>';
+  html+='<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>';
+  showModal(html);
+}
+function monthLabel(mo){ var M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p=mo.split("-"); return M[(+p[1])-1]+" "+p[0]; }
+function foChart(months, by, curMo){
+  if(months.length<2) return "";
+  var W=560,H=170,P={l:46,r:14,t:14,b:26};
+  var iw=W-P.l-P.r, ih=H-P.t-P.b;
+  var vals=months.map(function(mo){return by[mo].inc;});
+  var max=Math.max.apply(null,vals); if(max<=0) return "";
+  max=Math.ceil(max/500)*500;
+  function X(i){ return P.l + (months.length===1?iw/2:i*iw/(months.length-1)); }
+  function Y(v){ return P.t + ih - (v/max)*ih; }
+  var s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block;margin:4px 0 10px">';
+  [0,0.5,1].forEach(function(f){ var v=max*f,y=Y(v);
+    s+='<line x1="'+P.l+'" y1="'+y+'" x2="'+(W-P.r)+'" y2="'+y+'" stroke="rgba(0,0,0,0.10)" stroke-width="1"/>';
+    s+='<text x="'+(P.l-6)+'" y="'+(y+4)+'" text-anchor="end" font-size="10" fill="rgba(0,0,0,0.55)">\u00a3'+(v>=1000?(v/1000)+"k":v)+'</text>'; });
+  var pts=months.map(function(mo,i){ return X(i)+","+Y(by[mo].inc); });
+  s+='<polyline points="'+pts.join(" ")+'" fill="none" stroke="#2E86C1" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  months.forEach(function(mo,i){
+    var cur=(mo>=curMo), x=X(i), y=Y(by[mo].inc);
+    s+='<circle cx="'+x+'" cy="'+y+'" r="4" fill="'+(cur?'#FAFCFE':'#1B3F6B')+'" stroke="#1B3F6B" stroke-width="2"/>';
+    s+='<text x="'+x+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="rgba(0,0,0,0.6)">'+monthLabel(mo).slice(0,3)+(cur?"*":"")+'</text>';
+    s+='<text x="'+x+'" y="'+(y-9)+'" text-anchor="middle" font-size="10" font-weight="700" fill="#1B3F6B">\u00a3'+Math.round(by[mo].inc)+'</text>';
+  });
+  s+='</svg>';
+  return s;
+}
+var FO_PAIRS=[["KB","AB"],["MH","BW"]];
+function foResolvePayer(desc){
+  var t=(desc||"").trim().split(/\s+/); if(!t.length||!t[0]) return desc||"(no payer)";
+  var first=t[0].toLowerCase(), init=t.length>1?t[1].charAt(0).toLowerCase():"";
+  var hit=null;
+  Object.keys(data).forEach(function(c){
+    var n=(data[c].name||"").trim().split(/\s+/);
+    if(!n.length) return;
+    var nf=n[0].toLowerCase(), ni=n.length>1?n[1].charAt(0).toLowerCase():"";
+    if(nf===first && (!init || !ni || ni===init)) hit=c;
+  });
+  if(!hit) return desc;
+  for(var i=0;i<FO_PAIRS.length;i++){ if(FO_PAIRS[i].indexOf(hit)>-1) return FO_PAIRS[i].join("+"); }
+  return hit;
+}
+function foPayerLabel(key){
+  if(key.indexOf("+")>-1){ return key.split("+").map(function(c){return rosterName(c);}).join(" + "); }
+  return data[key]?rosterName(key):key;
+}
+function openOverview(){
+  var by={};
+  function row(mo){ if(!by[mo]) by[mo]={inc:0,exp:0,mil:0}; return by[mo]; }
+  (finance.txns||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo) return; var a=txnAmount(t); if(t.type==="Income") row(mo).inc+=a; else row(mo).exp+=a; });
+  (mileage.trips||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo) return; row(mo).mil+=tripMiles(t)*mileage.rate; });
+  var months=Object.keys(by).sort();
+  if(!months.length){ showModal('<h3>Tax year overview</h3><div class="hint">No data yet.</div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); return; }
+  function taxYear(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
+  var curMo=new Date().toISOString().slice(0,7), curTY=taxYear(curMo);
+  var tys={};
+  months.forEach(function(mo){ var ty=taxYear(mo); (tys[ty]=tys[ty]||[]).push(mo); });
+  var html='<h3>Tax year overview</h3>'+foChart(months,by,curMo);
+  var byClient={};
+  (finance.txns||[]).forEach(function(t){
+    if(t.type!=="Income"||!t.date) return;
+    var ty=taxYear(t.date.slice(0,7)), k=foResolvePayer(t.description);
+    if(!byClient[ty]) byClient[ty]={};
+    byClient[ty][k]=(byClient[ty][k]||0)+txnAmount(t);
+  });
+  Object.keys(tys).sort().forEach(function(ty){
+    html+='<div class="fo-wrap"><table class="fo-table"><tr><th>'+ty+'</th><th>In</th><th>Out</th><th>Mileage</th><th>Profit</th></tr>';
+    var done=0,sumI=0,sumE=0,sumM=0,totI=0,totE=0,totM=0;
+    tys[ty].forEach(function(mo){
+      var x=by[mo], prof=x.inc-x.exp-x.mil, cur=(mo>=curMo);
+      totI+=x.inc; totE+=x.exp; totM+=x.mil;
+      if(!cur){ done++; sumI+=x.inc; sumE+=x.exp; sumM+=x.mil; }
+      html+='<tr class="'+(cur?'fo-cur':'')+'"><td>'+monthLabel(mo)+(cur?' *':'')+'</td><td>'+gbp(x.inc)+'</td><td>'+gbp(x.exp)+'</td><td>'+gbp(round2(x.mil))+'</td><td class="'+(prof<0?'fo-neg':'fo-pos')+'">'+gbp(round2(prof))+'</td></tr>';
+    });
+    var totP=totI-totE-totM;
+    html+='<tr class="fo-avg"><td>'+ty+' to date</td><td>'+gbp(round2(totI))+'</td><td>'+gbp(round2(totE))+'</td><td>'+gbp(round2(totM))+'</td><td class="'+(totP<0?'fo-neg':'fo-pos')+'">'+gbp(round2(totP))+'</td></tr>';
+    if(done>0){
+      var aI=sumI/done,aE=sumE/done,aM=sumM/done,aP=aI-aE-aM;
+      html+='<tr class="fo-avg"><td>Avg ('+done+' mo)</td><td>'+gbp(round2(aI))+'</td><td>'+gbp(round2(aE))+'</td><td>'+gbp(round2(aM))+'</td><td class="'+(aP<0?'fo-neg':'fo-pos')+'">'+gbp(round2(aP))+'</td></tr>';
+    }
+    html+='</table></div>';
+    var bc=byClient[ty]||{}, keys=Object.keys(bc).sort(function(a,b){return bc[b]-bc[a];});
+    if(keys.length){
+      var tyInc=keys.reduce(function(a,k){return a+bc[k];},0);
+      html+='<div class="fo-wrap"><table class="fo-table"><tr><th>Income per client \u00b7 '+ty+'</th><th>Total</th><th>Share</th></tr>';
+      keys.forEach(function(k){
+        html+='<tr><td>'+esc(foPayerLabel(k))+'</td><td>'+gbp(round2(bc[k]))+'</td><td>'+Math.round(bc[k]/tyInc*100)+'%</td></tr>';
+      });
+      html+='</table></div>';
+    }
+    if(ty===curTY && done>0){
+      var aI2=sumI/done,aE2=sumE/done,aM2=sumM/done,aP2=aI2-aE2-aM2;
+      html+='<div class="fo-proj"><div class="mini-row"><span>Predicted '+ty+' income</span><span>'+gbp(round2(aI2*12))+'</span></div>'+
+        '<div class="mini-row"><span>Predicted '+ty+' expenditure (incl. mileage)</span><span>'+gbp(round2((aE2+aM2)*12))+'</span></div>'+
+        '<div class="mini-row"><span>Predicted '+ty+' profit</span><span class="'+(aP2<0?'fo-neg':'fo-pos')+'">'+gbp(round2(aP2*12))+'</span></div></div>';
+    }
+  });
+  html+='<div class="hint" style="margin-top:8px">Tax years run April to March (HMRC treats 1 Apr\u201331 Mar as equivalent to 6 Apr\u20135 Apr). * = month in progress, excluded from the average; predictions are the average of completed months \u00d7 12.</div>';
+  html+='<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>';
+  showModal(html);
+}
 function renderFinance(){ var income=0,expense=0;
   (finance.txns||[]).forEach(function(t){ var a=txnAmount(t); if(t.type==="Income") income+=a; else expense+=a; });
   var mClaim=0; (mileage.trips||[]).forEach(function(t){ mClaim+=tripMiles(t)*mileage.rate; });
