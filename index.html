@@ -141,6 +141,9 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
   .fo-proj{margin-top:12px;padding:10px;border-radius:10px;background:rgba(46,134,193,0.10);}
   .fo-proj .mini-row span:last-child{font-weight:700;}
   .fo-neg{color:#c0392b;} .fo-pos{color:#1e8449;}
+  .modal-box{position:relative;}
+  .sum-sub{font-size:10px;opacity:.65;margin-top:2px;white-space:nowrap;}
+  .fo-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;background:rgba(0,0,0,0.06);font-size:17px;line-height:1;cursor:pointer;color:#444;}
 </style>
 </head>
 <body>
@@ -600,7 +603,7 @@ function openSessOverview(){
   var curW=weekStart(new Date().toISOString().slice(0,10)), curMo=new Date().toISOString().slice(0,7);
   var wl=allW.map(function(w){ var p=w.split("-"),M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return (+p[2])+" "+M[(+p[1])-1]; });
   var wv=allW.map(function(w){ return byW[w]||0; });
-  var html='<h3>Sessions overview</h3>'+soChart(wl,wv,allW[allW.length-1]===curW);
+  var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Sessions overview</h3>'+soChart(wl,wv,allW[allW.length-1]===curW);
   var doneW=allW.filter(function(w){return w<curW;});
   var avgW=doneW.length? doneW.reduce(function(a,w){return a+(byW[w]||0);},0)/doneW.length : 0;
   html+='<div class="fo-wrap"><table class="fo-table"><tr><th>Month</th><th>Sessions</th><th>Per week (avg)</th></tr>';
@@ -614,6 +617,7 @@ function openSessOverview(){
   if(doneM){ var aM=sumM/doneM;
     html+='<tr class="fo-avg"><td>Avg ('+doneM+' mo)</td><td>'+(Math.round(aM*100)/100)+'</td><td>'+(Math.round(avgW*10)/10)+'</td></tr>'; }
   html+='</table></div>';
+  if(doneW.length){ html+='<div class="fo-proj"><div class="mini-row"><span>Average per completed week ('+doneW.length+')</span><span>'+(Math.round(avgW*10)/10)+'</span></div></div>'; }
   html+='<div class="hint" style="margin-top:8px">Delivered sessions only (Out entries). Weeks run Monday\u2013Sunday; chart shows the last '+allW.length+' weeks. * = in progress. The avg row\u2019s per-week figure is the true average over '+doneW.length+' completed weeks.</div>';
   html+='<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>';
   showModal(html);
@@ -673,7 +677,7 @@ function openOverview(){
   var curMo=new Date().toISOString().slice(0,7), curTY=taxYear(curMo);
   var tys={};
   months.forEach(function(mo){ var ty=taxYear(mo); (tys[ty]=tys[ty]||[]).push(mo); });
-  var html='<h3>Tax year overview</h3>'+foChart(months,by,curMo);
+  var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax year overview</h3>'+foChart(months,by,curMo);
   var byClient={};
   (finance.txns||[]).forEach(function(t){
     if(t.type!=="Income"||!t.date) return;
@@ -722,8 +726,8 @@ function renderFinance(){ var income=0,expense=0;
   var mClaim=0; (mileage.trips||[]).forEach(function(t){ mClaim+=tripMiles(t)*mileage.rate; });
   var net=round2(income-expense-mClaim);
   document.getElementById("f_summary").innerHTML='<div class="sum-card"><div class="sum-num green">'+gbp(income)+'</div><div class="sum-label">Income</div></div>'+
-    '<div class="sum-card"><div class="sum-num red">'+gbp(expense)+'</div><div class="sum-label">Expenses</div></div>'+
-    '<div class="sum-card"><div class="sum-num '+(net<0?'red':'')+'">'+gbp(net)+'</div><div class="sum-label">Net (incl. mileage)</div></div>';
+    '<div class="sum-card"><div class="sum-num red">'+gbp(expense)+'</div><div class="sum-label">Expenses</div><div class="sum-sub">+ '+gbp(round2(mClaim))+' mileage</div></div>'+
+    '<div class="sum-card"><div class="sum-num '+(net<0?'red':'')+'">'+gbp(net)+'</div><div class="sum-label">Net</div></div>';
   var byMonth={},byCat={};
   (finance.txns||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7),a=txnAmount(t); if(!byMonth[mo]) byMonth[mo]={inc:0,exp:0}; if(t.type==="Income") byMonth[mo].inc+=a; else byMonth[mo].exp+=a; if(t.type==="Expense") byCat[t.category]=(byCat[t.category]||0)+a; });
   var months=Object.keys(byMonth).filter(Boolean).sort(),mh="";
