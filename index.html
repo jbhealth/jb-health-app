@@ -738,7 +738,7 @@ async function openMaster(code){
     if(!res.ok){ setSave("warn","Couldn\u2019t load "+code+" master ("+res.status+")."); return; }
     var j=await res.json();
     var mhtml=b64ToUtf8(j.content);
-    curMaster={code:code, sha:j.sha, sigOrig:liveSig(mhtml)};
+    curMaster={code:code, sha:j.sha, sigOrig:liveSig(mhtml), cardsOrig:(mhtml.match(/class="exercise-card/g)||[]).length};
     var draft=lsGet("jbh_draft_"+code);
     if(draft){
       if(confirm("There\u2019s an unsaved local draft for "+code+".\n\nOK = restore your draft\nCancel = use the GitHub version")) mhtml=draft;
@@ -789,6 +789,12 @@ async function pushMaster(){
   var fr=document.getElementById("progFrame");
   try{ fr.contentWindow.bakeForExport(); }catch(e){ setSave("warn","Couldn\u2019t read the editor."); return; }
   var mhtml="<!DOCTYPE html>\n"+fr.contentDocument.documentElement.outerHTML;
+  var cardsNow=(mhtml.match(/class="exercise-card/g)||[]).length;
+  if(cardsNow===0 && curMaster.cardsOrig>0){
+    setSave("warn","Push blocked \u2014 editor content looks empty.");
+    alert("Push blocked.\n\nThe editor produced a master with NO exercises, but the version pulled from GitHub had "+curMaster.cardsOrig+".\n\nThis is the safety guard against wiping a master. Close and re-open the master, then try again. Your work is in the local draft.");
+    return;
+  }
   setSave("","Checking GitHub\u2026");
   try{
     var chk=await fetch(masterApi(curMaster.code)+"?ref="+PCFG.branch, {headers:progHeaders()});
