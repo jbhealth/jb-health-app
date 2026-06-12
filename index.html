@@ -51,6 +51,11 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 .client-row{display:flex;justify-content:space-between;align-items:center;padding:15px 16px;cursor:pointer;gap:10px;}
 .client-row:active{background:var(--accent);}
 .client-name{font-family:var(--serif);font-size:15px;font-weight:700;color:var(--navy);}
+.grp-head{display:flex;justify-content:space-between;align-items:center;padding:12px 4px 6px;cursor:pointer;color:var(--navy);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.07em;user-select:none;-webkit-user-select:none;}
+.grp-head .chev{transition:transform .15s;font-size:13px;color:#2E86C1;}
+.grp-head.closed .chev{transform:rotate(-90deg);}
+.sched-time{font-size:12px;color:#2E86C1;font-weight:700;background:#EAF4FB;padding:2px 8px;border-radius:10px;margin-right:8px;flex:0 0 auto;}
+.client-name{flex:1;min-width:0;}
 .client-sub{font-size:11.5px;color:var(--grey);margin-top:2px;}
 .bal{font-size:13px;font-weight:600;padding:4px 11px;border-radius:20px;white-space:nowrap;}
 .bal.credit{background:var(--credit);color:var(--green);}
@@ -406,16 +411,16 @@ function render(){
   for(var k=0;k<openNodes.length;k++){ open[openNodes[k].getAttribute("data-code")]=1; }
   var roster=[]; for(var code in data){ roster.push([code,data[code].name||code]); }
   roster.sort(function(a,b){ return a[1].localeCompare(b[1]); });
-  var html="";
-  for(var r=0;r<roster.length;r++){ var code=roster[r][0],name=roster[r][1]; if(name.toLowerCase().indexOf(q)===-1) continue;
+  function card(code,name,timeLabel){
     var b=balance(code),cls=b>0?"credit":(b<0?"owe":"zero"),txt=b>0?(fmt(b)+" in credit"):(b<0?("owes "+fmt(-b)):"settled");
     var ents=((data[code]&&data[code].entries)||[]).slice().reverse(),hist="";
     if(ents.length){ for(var e=0;e<ents.length;e++){ var en=ents[e];
       var tag=en.type==="in"?'<span class="entry-tag in">+'+fmt(en.sessions)+'</span>':en.type==="out"?'<span class="entry-tag out">\u2212'+fmt(en.sessions)+'</span>':'<span class="entry-tag open">opening '+(en.sessions>=0?'+':'')+fmt(en.sessions)+'</span>';
       var meta=[en.date,en.method||""].filter(Boolean).join(" \u00b7 ");
       hist+='<div class="entry"><div class="entry-main">'+tag+'<span class="entry-meta">'+meta+'</span></div><button class="entry-del" onclick="delEntry(\''+code+'\',\''+en.id+'\')">\u2715</button></div>';
-    } } else { hist='<div class="empty-hist">No entries yet — set a starting balance below.</div>'; }
-    html+='<div class="client '+(open[code]?'open':'')+'" data-code="'+code+'"><div class="client-row" onclick="this.parentElement.classList.toggle(\'open\')">'+
+    } } else { hist='<div class="empty-hist">No entries yet \u2014 set a starting balance below.</div>'; }
+    return '<div class="client '+(open[code]?'open':'')+'" data-code="'+code+'"><div class="client-row" onclick="this.parentElement.classList.toggle(\'open\')">'+
+      (timeLabel?'<span class="sched-time">'+esc(timeLabel)+'</span>':'')+
       '<span class="client-name">'+esc(name)+'</span><span class="bal '+cls+'">'+txt+'</span></div>'+
       '<div class="client-body"><div class="actions">'+
         '<button class="act pay" onclick="openPay(\''+code+'\',\''+js(name)+'\')">+ Payment (sessions in)</button>'+
@@ -423,7 +428,38 @@ function render(){
         '<button class="act setbal" onclick="openSetBal(\''+code+'\',\''+js(name)+'\')">Set balance</button>'+
       '</div><div class="hist-label">History</div>'+hist+'</div></div>';
   }
+  var html="";
+  if(!q && TODAY_SCHED){
+    var pos={},tm={}; TODAY_SCHED.order.forEach(function(o,i){ var c=String(o.c||o).toUpperCase(); if(pos[c]===undefined){ pos[c]=i; tm[c]=o.t||""; } });
+    var tod=roster.filter(function(r){return pos[r[0]]!==undefined;}).sort(function(a,b){return pos[a[0]]-pos[b[0]];});
+    var rest=roster.filter(function(r){return pos[r[0]]===undefined;});
+    if(tod.length){
+      var c1=grpClosed("today"),c2=grpClosed("rest");
+      html+='<div class="grp-head'+(c1?' closed':'')+'" onclick="toggleGrp(\'today\')"><span>Today \u00b7 '+tod.length+'</span><span class="chev">\u25BE</span></div>';
+      if(!c1) for(var t1=0;t1<tod.length;t1++) html+=card(tod[t1][0],tod[t1][1],tm[tod[t1][0]]);
+      html+='<div class="grp-head'+(c2?' closed':'')+'" onclick="toggleGrp(\'rest\')"><span>Everyone else \u00b7 '+rest.length+'</span><span class="chev">\u25BE</span></div>';
+      if(!c2) for(var t2=0;t2<rest.length;t2++) html+=card(rest[t2][0],rest[t2][1],null);
+    } else {
+      for(var r0=0;r0<roster.length;r0++) html+=card(roster[r0][0],roster[r0][1],null);
+    }
+  } else {
+    for(var r=0;r<roster.length;r++){ if(roster[r][1].toLowerCase().indexOf(q)===-1) continue; html+=card(roster[r][0],roster[r][1],null); }
+  }
   document.getElementById("list").innerHTML=html||'<div class="empty-hist" style="padding:20px">No clients match.</div>';
+}
+
+/* ---- today schedule (written by daily prep -> programs/today.json) ---- */
+var TODAY_SCHED=null;
+function localToday(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function grpClosed(k){ return lsGet("jbh_grp_"+k)==="1"; }
+function toggleGrp(k){ lsSet("jbh_grp_"+k, grpClosed(k)?"0":"1"); render(); }
+async function loadTodaySched(){
+  try{
+    var r=await fetch("https://raw.githubusercontent.com/jbhealth/programs/main/today.json?t="+Date.now(),{cache:"no-store"});
+    if(!r.ok) return;
+    var j=await r.json();
+    if(j && j.date===localToday() && Array.isArray(j.order) && j.order.length){ TODAY_SCHED=j; render(); }
+  }catch(e){}
 }
 function openAdd(){ showModal('<h3>Add client</h3>'+
   '<div class="field"><label>Name</label><input id="a_name" placeholder="e.g. Joe B." oninput="suggestCode()"></div>'+
@@ -1011,7 +1047,7 @@ window.addEventListener("popstate", function(){
 });
 function startup(){ loadCfg();
   try{ var c=lsGet("jbh_cache"); if(c) applyBundle(JSON.parse(c)); }catch(e){}
-  seedDefaults(); renderAll(); loadRoster(); dataLoaded=true; switchTab("programs"); _historyTrap();
+  seedDefaults(); renderAll(); loadRoster(); dataLoaded=true; switchTab("programs"); _historyTrap(); loadTodaySched();
   if(ghConfigured()){ setSave("","Connected — pulling latest\u2026"); pullFromGitHub(); }
   else { setSave("","Saved on this device. Tap Sync to enable phone\u2194PC sync."); }
 }
