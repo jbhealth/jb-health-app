@@ -236,6 +236,18 @@ function loadRoster(){
   try{ lsDel("jbh_roster"); }catch(e){}   /* clear any stale cached roster from the old sync */
   renderPrograms();
 }
+
+/* --- Daily prep: optional today.json (public programs repo) lifts today's in-person
+   clients into a Today group. In-person only; online is never on Bakes. --- */
+var TODAY_ORDER=null;
+function loadToday(){
+  try{
+    fetch("https://jbhealth.github.io/programs/today.json?t="+Date.now(),{cache:"no-store"})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){ TODAY_ORDER=(j && j.date===today() && j.order && j.order.length)? j : null; renderPrograms(); })
+      .catch(function(){ TODAY_ORDER=null; });
+  }catch(e){ TODAY_ORDER=null; }
+}
 var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Cost of Goods Sold","Advertising & Marketing","Professional Fees","Software & Subscriptions","Bank Charges","Telephone & Internet","Home Office","Training & Courses","Insurance","Repairs & Maintenance","Other Allowable Expenses","Non-allowable (Personal)"];
 var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
 
@@ -904,8 +916,9 @@ function renderPrograms(){
         '<button class="act session" style="flex:none;min-width:0;padding:8px 12px" onclick="openMaster(\''+code+'\')">Master</button>'+
       '</span></div></div>';
   }
-  function progSection(secId,label,codes){
-    var sorted=codes.map(function(c){return [c, rosterName(c)];}).sort(function(a,b){return a[1].localeCompare(b[1]);});
+  function progSection(secId,label,codes,keepOrder){
+    var sorted=codes.map(function(c){return [c, rosterName(c)];});
+    if(!keepOrder) sorted.sort(function(a,b){return a[1].localeCompare(b[1]);});
     var body="",shown=0;
     for(var i=0;i<sorted.length;i++){ var r=progRow(sorted[i][0]); if(r){ body+=r; shown++; } }
     if(!shown) return "";
@@ -915,8 +928,22 @@ function renderPrograms(){
         '<span>'+label+'</span><span class="roster-count">('+shown+')</span><span class="roster-chev">&#9662;</span>'+
       '</div><div class="roster-body">'+body+'</div></div>';
   }
-  var html = progSection("inperson","In-person",Object.keys(CLIENT_NAMES))
-           + progSection("online","Online",Object.keys(CLIENT_NAMES_ONLINE));
+  /* Daily-prep split (in-person only): today's booked clients in session-time order on
+     top, everyone else alphabetical below. Falls back to one In-person section when there
+     is no valid today.json. Online is never reordered. */
+  var ipCodes=Object.keys(CLIENT_NAMES), todayCodes=[];
+  if(TODAY_ORDER){
+    var seen={}, ord=TODAY_ORDER.order.slice().sort(function(a,b){return String(a.t||"").localeCompare(String(b.t||""));});
+    for(var ti=0;ti<ord.length;ti++){ var cc=ord[ti].c; if(CLIENT_NAMES[cc] && !seen[cc]){ todayCodes.push(cc); seen[cc]=1; } }
+  }
+  var inHtml;
+  if(todayCodes.length){
+    var restCodes=ipCodes.filter(function(c){ return todayCodes.indexOf(c)===-1; });
+    inHtml = progSection("today","Today",todayCodes,true) + progSection("rest","Everyone else",restCodes,false);
+  } else {
+    inHtml = progSection("inperson","In-person",ipCodes,false);
+  }
+  var html = inHtml + progSection("online","Online",Object.keys(CLIENT_NAMES_ONLINE),false);
   listEl.innerHTML = html || '<div class="empty-hist" style="padding:20px">No clients match.</div>';
 }
 
@@ -1036,7 +1063,7 @@ window.addEventListener("popstate", function(){
 });
 function startup(){ loadCfg();
   try{ var c=lsGet("jbh_cache"); if(c) applyBundle(JSON.parse(c)); }catch(e){}
-  seedDefaults(); renderAll(); loadRoster(); dataLoaded=true; switchTab("programs"); _historyTrap();
+  seedDefaults(); renderAll(); loadRoster(); loadToday(); dataLoaded=true; switchTab("programs"); _historyTrap();
   if(ghConfigured()){ setSave("","Connected — pulling latest\u2026"); pullFromGitHub(); }
   else { setSave("","Saved on this device. Tap Sync to enable phone\u2194PC sync."); }
 }
