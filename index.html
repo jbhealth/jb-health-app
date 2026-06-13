@@ -226,9 +226,9 @@ var CLIENT_NAMES_ONLINE = {
   "OL_GC":"GC",
   "OL_AB":"AB"
 };
-/* Golf clients: keyed by PREFIXED code (e.g. "OL_AB") so the same initials in a
-   different stream don't collide. Looked up via prefixFor(code)+code. */
-var GOLF_CODES = { "OL_AB":1 };   // online Amelia (OL_AB); in-person AB (Anna) is unaffected
+/* Golf flag is data-driven: it comes from each client's synced record
+   (online_names[code].golf, or data[code].golf for in-person), so it tracks the Tally
+   answer captured at onboarding. No hardcoded list. See isGolf(). */
 function bareCode(code){ return (code.indexOf("OL_")===0||code.indexOf("JB_")===0) ? code.slice(3) : code; }
 function isOnline(code){
   if(code.indexOf("OL_")===0) return true;
@@ -242,9 +242,14 @@ var CLIENTS = Object.keys(CLIENT_NAMES).map(function(c){ return [c, CLIENT_NAMES
 /* Public-dashboard auto-sync removed June 2026 (dashboard retired; app is the dashboard). */
 /* Names resolve: private data -> initials map -> the code itself, so nobody is ever hidden. */
 var ROSTER_CODES = Object.keys(CLIENT_NAMES);
+function onlineRec(code){ var b=bareCode(code); return ONLINE_NAMES[code] || ONLINE_NAMES["OL_"+b] || null; }
 function rosterName(code){
-  if(isOnline(code)){ var b=bareCode(code); return ONLINE_NAMES[code] || ONLINE_NAMES["OL_"+b] || CLIENT_NAMES_ONLINE[code] || CLIENT_NAMES_ONLINE[b] || b; }
+  if(isOnline(code)){ var b=bareCode(code); var rec=onlineRec(code); var nm=rec&&(typeof rec==="object"?rec.name:rec); return nm || CLIENT_NAMES_ONLINE[code] || CLIENT_NAMES_ONLINE[b] || b; }
   return (data[code] && data[code].name) || CLIENT_NAMES[code] || code;
+}
+function isGolf(code){
+  if(isOnline(code)){ var rec=onlineRec(code); return !!(rec && typeof rec==="object" && rec.golf); }
+  return !!(data[code] && data[code].golf);
 }
 function loadRoster(){
   ROSTER_CODES = Object.keys(CLIENT_NAMES);
@@ -926,7 +931,7 @@ function renderPrograms(){
     var name=rosterName(code);
     if(name.toLowerCase().indexOf(q)===-1) return "";
     return '<div class="client"><div class="client-row" style="cursor:default">'+
-      '<span class="client-name">'+esc(name)+(GOLF_CODES[prefixFor(code)+bareCode(code)]?' \u26F3':'')+' <span class="entry-meta">('+code+')</span></span>'+
+      '<span class="client-name">'+esc(name)+(isGolf(code)?' \u26F3':'')+' <span class="entry-meta">('+code+')</span></span>'+
       '<span style="display:flex;gap:6px;flex:none">'+
         '<button class="act setbal" style="flex:none;min-width:0;padding:8px 12px" onclick="openClientView(\''+code+'\')">Client</button>'+
         '<button class="act session" style="flex:none;min-width:0;padding:8px 12px" onclick="openMaster(\''+code+'\')">Master</button>'+
