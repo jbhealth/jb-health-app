@@ -222,6 +222,8 @@ var CLIENT_NAMES = {
 var CLIENT_NAMES_ONLINE = {
   "GC":"GC"
 };
+/* Golf clients (online stream): show a flag on the dashboard. Keys are initials codes. */
+var GOLF_CODES = {  };   // e.g. "AB":1 when a client is a golf client
 function isOnline(code){ return Object.prototype.hasOwnProperty.call(CLIENT_NAMES_ONLINE, code); }
 function prefixFor(code){ return isOnline(code) ? "OL_" : "JB_"; }
 /* Seed/Sessions list derived from the name map (single place for names). */
@@ -910,7 +912,7 @@ function renderPrograms(){
     var name=rosterName(code);
     if(name.toLowerCase().indexOf(q)===-1) return "";
     return '<div class="client"><div class="client-row" style="cursor:default">'+
-      '<span class="client-name">'+esc(name)+' <span class="entry-meta">('+code+')</span></span>'+
+      '<span class="client-name">'+esc(name)+(GOLF_CODES[code]?' \u26F3':'')+' <span class="entry-meta">('+code+')</span></span>'+
       '<span style="display:flex;gap:6px;flex:none">'+
         '<button class="act setbal" style="flex:none;min-width:0;padding:8px 12px" onclick="openClientView(\''+code+'\')">Client</button>'+
         '<button class="act session" style="flex:none;min-width:0;padding:8px 12px" onclick="openMaster(\''+code+'\')">Master</button>'+
