@@ -223,7 +223,7 @@ var CLIENT_NAMES_ONLINE = {
   "GC":"GC"
 };
 /* Golf clients (online stream): show a flag on the dashboard. Keys are initials codes. */
-var GOLF_CODES = {  };   // e.g. "AB":1 when a client is a golf client
+var GOLF_CODES = { "AB":1 };   // e.g. "AB":1 when a client is a golf client
 function isOnline(code){ return Object.prototype.hasOwnProperty.call(CLIENT_NAMES_ONLINE, code); }
 function prefixFor(code){ return isOnline(code) ? "OL_" : "JB_"; }
 /* Seed/Sessions list derived from the name map (single place for names). */
