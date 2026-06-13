@@ -218,14 +218,23 @@ var CLIENT_NAMES = {
   "KH":"KH","KB":"KB","LS":"LS","MF":"MF","MH":"MH",
   "NS":"NS","RC":"RC","SP":"SP","SD":"SD","SB":"SB","HH":"HH"
 };
-/* --- Online (bespoke) clients: separate stream. Kept out of CLIENTS/sessions/finance/mileage. --- */
+/* --- Online (bespoke) clients: separate stream. Kept out of CLIENTS/sessions/finance/mileage.
+   Keyed by PREFIXED code (OL_<INITIALS>) so initials shared with an in-person client
+   (e.g. AB = Anna in-person, Amelia online) never collide. Public file holds initials only;
+   friendly names come from the private synced data.json (online_names) via rosterName(). --- */
 var CLIENT_NAMES_ONLINE = {
-  "GC":"GC"
+  "OL_GC":"GC",
+  "OL_AB":"AB"
 };
 /* Golf clients: keyed by PREFIXED code (e.g. "OL_AB") so the same initials in a
    different stream don't collide. Looked up via prefixFor(code)+code. */
 var GOLF_CODES = { "OL_AB":1 };   // online Amelia (OL_AB); in-person AB (Anna) is unaffected
-function isOnline(code){ return Object.prototype.hasOwnProperty.call(CLIENT_NAMES_ONLINE, code); }
+function bareCode(code){ return (code.indexOf("OL_")===0||code.indexOf("JB_")===0) ? code.slice(3) : code; }
+function isOnline(code){
+  if(code.indexOf("OL_")===0) return true;
+  if(code.indexOf("JB_")===0) return false;
+  return Object.prototype.hasOwnProperty.call(CLIENT_NAMES_ONLINE, code); /* legacy bare online key */
+}
 function prefixFor(code){ return isOnline(code) ? "OL_" : "JB_"; }
 /* Seed/Sessions list derived from the name map (single place for names). */
 var CLIENTS = Object.keys(CLIENT_NAMES).map(function(c){ return [c, CLIENT_NAMES[c]]; });
@@ -233,7 +242,10 @@ var CLIENTS = Object.keys(CLIENT_NAMES).map(function(c){ return [c, CLIENT_NAMES
 /* Public-dashboard auto-sync removed June 2026 (dashboard retired; app is the dashboard). */
 /* Names resolve: private data -> initials map -> the code itself, so nobody is ever hidden. */
 var ROSTER_CODES = Object.keys(CLIENT_NAMES);
-function rosterName(code){ return (data[code] && data[code].name) || CLIENT_NAMES[code] || CLIENT_NAMES_ONLINE[code] || code; }
+function rosterName(code){
+  if(isOnline(code)){ var b=bareCode(code); return ONLINE_NAMES[code] || ONLINE_NAMES["OL_"+b] || CLIENT_NAMES_ONLINE[code] || CLIENT_NAMES_ONLINE[b] || b; }
+  return (data[code] && data[code].name) || CLIENT_NAMES[code] || code;
+}
 function loadRoster(){
   ROSTER_CODES = Object.keys(CLIENT_NAMES);
   try{ lsDel("jbh_roster"); }catch(e){}   /* clear any stale cached roster from the old sync */
@@ -254,7 +266,7 @@ function loadToday(){
 var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Cost of Goods Sold","Advertising & Marketing","Professional Fees","Software & Subscriptions","Bank Charges","Telephone & Internet","Home Office","Training & Courses","Insurance","Repairs & Maintenance","Other Allowable Expenses","Non-allowable (Personal)"];
 var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
 
-var data = {}, mileage = {rate:0.45, trips:[]}, finance = {txns:[]};
+var data = {}, mileage = {rate:0.45, trips:[]}, finance = {txns:[]}, ONLINE_NAMES = {};
 var dataLoaded = false, seeded = false, activeTab = "programs";
 var cfg = {owner:"",repo:"",branch:"main",path:"data.json",token:""};
 var pushTimer=null, syncing=false, memLS={};
@@ -292,12 +304,13 @@ function loadCfg(){ try{ var c=JSON.parse(lsGet("jbh_repo")||"{}"); cfg.owner=c.
 function ghConfigured(){ return !!(cfg.token && cfg.owner && cfg.repo); }
 function apiUrl(){ return "https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+cfg.path.split("/").map(encodeURIComponent).join("/"); }
 function ghHeaders(){ return {"Authorization":"Bearer "+cfg.token,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Content-Type":"application/json"}; }
-function bundle(){ return {v:3, sessions:data, mileage:mileage, finance:finance, ts:Date.now()}; }
+function bundle(){ return {v:3, sessions:data, mileage:mileage, finance:finance, online_names:ONLINE_NAMES, ts:Date.now()}; }
 function cacheLocal(){ lsSet("jbh_cache", JSON.stringify(bundle())); }
 function applyBundle(obj){
   if(!obj||typeof obj!=="object") return;
   if(obj.sessions||obj.mileage||obj.finance){ data=obj.sessions||{}; mileage=obj.mileage||{rate:0.45,trips:[]}; finance=obj.finance||{txns:[]}; }
   else { data=obj; }
+  ONLINE_NAMES = obj.online_names || {};
   if(!mileage.trips) mileage.trips=[]; if(typeof mileage.rate!=="number") mileage.rate=0.45; if(!finance.txns) finance.txns=[];
   seeded=false; seedDefaults();
 }
@@ -882,9 +895,9 @@ var curMaster = null;
 var _draftTimer = null;
 function progToken(){ return lsGet("jbh_prog_token") || ""; }
 function progHeaders(){ return {"Authorization":"Bearer "+progToken(),"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"jb-app"}; }
-function masterPath(code){ return prefixFor(code)+code+"_Programs_Master.html"; }
+function masterPath(code){ return prefixFor(code)+bareCode(code)+"_Programs_Master.html"; }
 function masterApi(code){ return "https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/"+masterPath(code); }
-function clientUrl(code){ return "https://jbhealth.github.io/programs/"+prefixFor(code)+code+"_Programs_Client.html"; }
+function clientUrl(code){ return "https://jbhealth.github.io/programs/"+prefixFor(code)+bareCode(code)+"_Programs_Client.html"; }
 function openClientView(code){ var f=document.getElementById("cvFrame"); f.src=clientUrl(code); document.getElementById("clientView").classList.add("show"); }
 function closeClientView(){ document.getElementById("clientView").classList.remove("show"); document.getElementById("cvFrame").src="about:blank"; }
 
@@ -913,7 +926,7 @@ function renderPrograms(){
     var name=rosterName(code);
     if(name.toLowerCase().indexOf(q)===-1) return "";
     return '<div class="client"><div class="client-row" style="cursor:default">'+
-      '<span class="client-name">'+esc(name)+(GOLF_CODES[prefixFor(code)+code]?' \u26F3':'')+' <span class="entry-meta">('+code+')</span></span>'+
+      '<span class="client-name">'+esc(name)+(GOLF_CODES[prefixFor(code)+bareCode(code)]?' \u26F3':'')+' <span class="entry-meta">('+code+')</span></span>'+
       '<span style="display:flex;gap:6px;flex:none">'+
         '<button class="act setbal" style="flex:none;min-width:0;padding:8px 12px" onclick="openClientView(\''+code+'\')">Client</button>'+
         '<button class="act session" style="flex:none;min-width:0;padding:8px 12px" onclick="openMaster(\''+code+'\')">Master</button>'+
