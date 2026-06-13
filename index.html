@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -59,7 +58,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 .bal.zero,.bal.neutral{background:var(--accent);color:var(--grey);}
 .bal.navy{background:var(--accent);color:var(--navy);}
 .client-body{display:none;padding:0 16px 16px;border-top:1px solid var(--border);}
-.client.open .client-body{display:block;}
+.client.open .client-body{display:block;} .roster-section{margin-bottom:10px;} .roster-head{display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 12px;background:var(--accent);border:1px solid var(--border);border-radius:10px;font-weight:600;color:var(--navy);} .roster-head .roster-count{color:var(--grey);font-weight:400;font-size:12px;} .roster-head .roster-chev{margin-left:auto;transition:transform .15s ease;} .roster-section:not(.open) .roster-body{display:none;} .roster-section:not(.open) .roster-chev{transform:rotate(-90deg);} .roster-body{padding-top:6px;}
 .actions{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;}
 .act{flex:1;min-width:104px;border:none;border-radius:9px;padding:11px;font-size:12px;font-weight:600;font-family:var(--sans);cursor:pointer;}
 .act.pay{background:var(--green);color:#fff;}
@@ -219,13 +218,19 @@ var CLIENT_NAMES = {
   "KH":"KH","KB":"KB","LS":"LS","MF":"MF","MH":"MH",
   "NS":"NS","RC":"RC","SP":"SP","SD":"SD","SB":"SB","HH":"HH"
 };
+/* --- Online (bespoke) clients: separate stream. Kept out of CLIENTS/sessions/finance/mileage. --- */
+var CLIENT_NAMES_ONLINE = {
+  "GC":"GC"
+};
+function isOnline(code){ return Object.prototype.hasOwnProperty.call(CLIENT_NAMES_ONLINE, code); }
+function prefixFor(code){ return isOnline(code) ? "OL_" : "JB_"; }
 /* Seed/Sessions list derived from the name map (single place for names). */
 var CLIENTS = Object.keys(CLIENT_NAMES).map(function(c){ return [c, CLIENT_NAMES[c]]; });
 /* --- Programs tab roster: CLIENT_NAMES is the single source. --- */
 /* Public-dashboard auto-sync removed June 2026 (dashboard retired; app is the dashboard). */
 /* Names resolve: private data -> initials map -> the code itself, so nobody is ever hidden. */
 var ROSTER_CODES = Object.keys(CLIENT_NAMES);
-function rosterName(code){ return (data[code] && data[code].name) || CLIENT_NAMES[code] || code; }
+function rosterName(code){ return (data[code] && data[code].name) || CLIENT_NAMES[code] || CLIENT_NAMES_ONLINE[code] || code; }
 function loadRoster(){
   ROSTER_CODES = Object.keys(CLIENT_NAMES);
   try{ lsDel("jbh_roster"); }catch(e){}   /* clear any stale cached roster from the old sync */
@@ -862,9 +867,9 @@ var curMaster = null;
 var _draftTimer = null;
 function progToken(){ return lsGet("jbh_prog_token") || ""; }
 function progHeaders(){ return {"Authorization":"Bearer "+progToken(),"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"jb-app"}; }
-function masterPath(code){ return "JB_"+code+"_Programs_Master.html"; }
+function masterPath(code){ return prefixFor(code)+code+"_Programs_Master.html"; }
 function masterApi(code){ return "https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/"+masterPath(code); }
-function clientUrl(code){ return "https://jbhealth.github.io/programs/JB_"+code+"_Programs_Client.html"; }
+function clientUrl(code){ return "https://jbhealth.github.io/programs/"+prefixFor(code)+code+"_Programs_Client.html"; }
 function openClientView(code){ var f=document.getElementById("cvFrame"); f.src=clientUrl(code); document.getElementById("clientView").classList.add("show"); }
 function closeClientView(){ document.getElementById("clientView").classList.remove("show"); document.getElementById("cvFrame").src="about:blank"; }
 
@@ -884,15 +889,34 @@ function renderPrograms(){
   var el=document.getElementById("progStatus"); if(el) el.textContent = progToken()? "Token set \u2713" : "No token";
   var listEl=document.getElementById("prog_list"); if(!listEl) return;
   var q=(document.getElementById("prog_search").value||"").toLowerCase();
-  var roster=ROSTER_CODES.map(function(code){return [code, rosterName(code)];}).sort(function(a,b){return a[1].localeCompare(b[1]);}), html="";
-  roster.forEach(function(c){ var code=c[0],name=c[1]; if(name.toLowerCase().indexOf(q)===-1) return;
-    html+='<div class="client"><div class="client-row" style="cursor:default">'+
+  /* Two collapsible streams: In-person on top, Online beneath. Online stays a plain
+     alphabetical list - no today.json / daily-prep to-top ordering is applied to it. */
+  var collapsed={};
+  var secNodes=document.querySelectorAll("#prog_list .roster-section");
+  for(var si=0;si<secNodes.length;si++){ if(!secNodes[si].classList.contains("open")) collapsed[secNodes[si].getAttribute("data-sec")]=1; }
+  function progRow(code){
+    var name=rosterName(code);
+    if(name.toLowerCase().indexOf(q)===-1) return "";
+    return '<div class="client"><div class="client-row" style="cursor:default">'+
       '<span class="client-name">'+esc(name)+' <span class="entry-meta">('+code+')</span></span>'+
       '<span style="display:flex;gap:6px;flex:none">'+
         '<button class="act setbal" style="flex:none;min-width:0;padding:8px 12px" onclick="openClientView(\''+code+'\')">Client</button>'+
         '<button class="act session" style="flex:none;min-width:0;padding:8px 12px" onclick="openMaster(\''+code+'\')">Master</button>'+
       '</span></div></div>';
-  });
+  }
+  function progSection(secId,label,codes){
+    var sorted=codes.map(function(c){return [c, rosterName(c)];}).sort(function(a,b){return a[1].localeCompare(b[1]);});
+    var body="",shown=0;
+    for(var i=0;i<sorted.length;i++){ var r=progRow(sorted[i][0]); if(r){ body+=r; shown++; } }
+    if(!shown) return "";
+    var openCls=collapsed[secId]?"":" open";
+    return '<div class="roster-section'+openCls+'" data-sec="'+secId+'">'+
+      '<div class="roster-head" onclick="this.parentElement.classList.toggle(\'open\')">'+
+        '<span>'+label+'</span><span class="roster-count">('+shown+')</span><span class="roster-chev">&#9662;</span>'+
+      '</div><div class="roster-body">'+body+'</div></div>';
+  }
+  var html = progSection("inperson","In-person",Object.keys(CLIENT_NAMES))
+           + progSection("online","Online",Object.keys(CLIENT_NAMES_ONLINE));
   listEl.innerHTML = html || '<div class="empty-hist" style="padding:20px">No clients match.</div>';
 }
 
