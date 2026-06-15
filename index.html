@@ -283,7 +283,7 @@ function fmt(n){ var r=Math.round((Number(n)||0)*100)/100; return Number.isInteg
 function round2(n){ return Math.round((Number(n)||0)*100)/100; }
 function gbp(n){ return "\u00a3"+(Math.round((Number(n)||0)*100)/100).toFixed(2); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
-function today(){ return new Date().toISOString().slice(0,10); }
+function today(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 var DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function dayOf(iso){ var d=new Date(iso+"T00:00:00"); return isNaN(d)?"":DOW[d.getDay()]; }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
