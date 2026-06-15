@@ -263,7 +263,7 @@ function loadRoster(){
 var TODAY_ORDER=null;
 function loadToday(){
   try{
-    fetch("https://jbhealth.github.io/programs/today.json?t="+Date.now(),{cache:"no-store"})
+    fetch("../programs/today.json?t="+Date.now(),{cache:"no-store"})
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(j){ TODAY_ORDER=(j && j.date===today() && j.order && j.order.length)? j : null; renderPrograms(); })
       .catch(function(){ TODAY_ORDER=null; });
