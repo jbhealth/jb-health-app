@@ -932,8 +932,10 @@ function renderPrograms(){
   function progRow(code){
     var name=rosterName(code);
     if(name.toLowerCase().indexOf(q)===-1) return "";
+    var t=todayTimes[code];
+    var timeHtml = t? '<span style="display:inline-block;min-width:46px;font-variant-numeric:tabular-nums;font-weight:700;color:#1B3F6B">'+esc(t)+'</span> ' : '';
     return '<div class="client"><div class="client-row" style="cursor:default">'+
-      '<span class="client-name">'+esc(name)+(isGolf(code)?' \u26F3':'')+' <span class="entry-meta">('+code+')</span></span>'+
+      '<span class="client-name">'+timeHtml+esc(name)+(isGolf(code)?' \u26F3':'')+' <span class="entry-meta">('+code+')</span></span>'+
       '<span style="display:flex;gap:6px;flex:none">'+
         '<button class="act setbal" style="flex:none;min-width:0;padding:8px 12px" onclick="openClientView(\''+code+'\')">Client</button>'+
         '<button class="act session" style="flex:none;min-width:0;padding:8px 12px" onclick="openMaster(\''+code+'\')">Master</button>'+
@@ -954,10 +956,10 @@ function renderPrograms(){
   /* Daily-prep split (in-person only): today's booked clients in session-time order on
      top, everyone else alphabetical below. Falls back to one In-person section when there
      is no valid today.json. Online is never reordered. */
-  var ipCodes=Object.keys(CLIENT_NAMES), todayCodes=[];
+  var ipCodes=Object.keys(CLIENT_NAMES), todayCodes=[], todayTimes={};
   if(TODAY_ORDER){
     var seen={}, ord=TODAY_ORDER.order.slice().sort(function(a,b){return String(a.t||"").localeCompare(String(b.t||""));});
-    for(var ti=0;ti<ord.length;ti++){ var cc=ord[ti].c; if(CLIENT_NAMES[cc] && !seen[cc]){ todayCodes.push(cc); seen[cc]=1; } }
+    for(var ti=0;ti<ord.length;ti++){ var cc=ord[ti].c; if(CLIENT_NAMES[cc] && !seen[cc]){ todayCodes.push(cc); todayTimes[cc]=ord[ti].t||""; seen[cc]=1; } }
   }
   var inHtml;
   if(todayCodes.length){
