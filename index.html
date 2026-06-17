@@ -412,11 +412,11 @@ function openSync(){
   var last=lsGet("jbh_lastsync"); var lastTxt=last?new Date(Number(last)).toLocaleString():"never";
   showModal('<h3>GitHub sync</h3>'+
     '<div class="statusline '+(connected?'ok':'')+'">'+(connected?('Connected: '+esc(cfg.owner)+'/'+esc(cfg.repo)+' \u00b7 last sync '+lastTxt):'Not connected — enter details below.')+'</div>'+
-    '<div class="hint">Uses a fine-grained token scoped to <b>one private repo</b> (Contents: read &amp; write). The token is stored only on this device. Do not enable GitHub Pages on the data repo.</div>'+
-    '<div class="field"><label>GitHub username (owner)</label><input id="sy_owner" value="'+esc(cfg.owner)+'" placeholder="your-username" autocapitalize="off" autocorrect="off"></div>'+
-    '<div class="field"><label>Repository name</label><input id="sy_repo" value="'+esc(cfg.repo)+'" placeholder="jb-health-data" autocapitalize="off" autocorrect="off"></div>'+
-    '<div class="row2"><div class="field"><label>Branch</label><input id="sy_branch" value="'+esc(cfg.branch)+'" autocapitalize="off"></div>'+
-      '<div class="field"><label>File path</label><input id="sy_path" value="'+esc(cfg.path)+'" autocapitalize="off"></div></div>'+
+    '<div class="hint">Uses your single GitHub token (the same one Programs uses) \u2014 set it once, here or via the GitHub token button. Owner/repo are pre-filled; just tap Test &amp; connect. Stored only on this device.</div>'+
+    '<div class="field"><label>GitHub username (owner)</label><input id="sy_owner" value="'+esc(cfg.owner||"jbhealth")+'" placeholder="jbhealth" autocapitalize="off" autocorrect="off"></div>'+
+    '<div class="field"><label>Repository name</label><input id="sy_repo" value="'+esc(cfg.repo||"jb-health-data")+'" placeholder="jb-health-data" autocapitalize="off" autocorrect="off"></div>'+
+    '<div class="row2"><div class="field"><label>Branch</label><input id="sy_branch" value="'+esc(cfg.branch||"main")+'" autocapitalize="off"></div>'+
+      '<div class="field"><label>File path</label><input id="sy_path" value="'+esc(cfg.path||"data.json")+'" autocapitalize="off"></div></div>'+
     '<div class="field"><label>Access token</label><input id="sy_token" type="password" value="'+esc(cfg.token)+'" placeholder="github_pat_\u2026" autocapitalize="off" autocorrect="off"></div>'+
     '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button><button class="mb-save" onclick="connectSync()">Test &amp; connect</button></div>'+
     (connected?'<div class="modal-btns"><button class="mb-cancel" onclick="manualPull()">Pull now</button><button class="mb-cancel" onclick="manualPush()">Push now</button></div>'+
