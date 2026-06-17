@@ -195,7 +195,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 </div>
 
 <div class="view active" id="view-programs">
-  <div class="actbar"><button class="ghost" onclick="openProgSettings()">Programs token</button><span class="ratechip" id="progStatus" style="cursor:default">—</span></div>
+  <div class="actbar"><button class="ghost" onclick="openProgSettings()">GitHub token</button><span class="ratechip" id="progStatus" style="cursor:default">—</span></div>
   <div class="search-wrap"><input class="search-input" id="prog_search" placeholder="Search client…" oninput="renderPrograms()"></div>
   <div class="list" id="prog_list"></div>
   <div class="note">Tap a client's <b>Master</b> to edit their program — it pulls the live private master, you edit (tap a reps/sets pill to change it; “+ Insert exercise above” to add one), then <b>Push to Git</b>. <b>Client</b> opens their public read-only page. Changing exercises or reps/sets means the public page needs a re-publish — the app flags it; at end of day tell Claude “republish [code]”.</div>
@@ -925,7 +925,7 @@ document.getElementById("modal").addEventListener("click",function(e){ if(e.targ
 var PCFG = {owner:"jbhealth", masters:"masters", programs:"programs", branch:"main"};
 var curMaster = null;
 var _draftTimer = null;
-function progToken(){ return lsGet("jbh_prog_token") || ""; }
+function progToken(){ return cfg.token || lsGet("jbh_token") || lsGet("jbh_prog_token") || ""; }
 function progHeaders(){ return {"Authorization":"Bearer "+progToken(),"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"jb-app"}; }
 function masterPath(code){ return prefixFor(code)+bareCode(code)+"_Programs_Master.html"; }
 function masterApi(code){ return "https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/"+masterPath(code); }
@@ -998,12 +998,12 @@ function renderPrograms(){
 }
 
 function openProgSettings(){
-  showModal('<h3>Programs GitHub token</h3>'+
-   '<div class="hint">A fine-grained token with <b>Contents: read &amp; write</b> on the <b>masters</b> repo. Separate from your data-sync token \u2014 keep that one narrow. Stored only on this device.</div>'+
+  showModal('<h3>GitHub token</h3>'+
+   '<div class="hint">One token with write access to all your repos \u2014 powers programs, sync, and approvals alike. The same token the Sync screen uses; set it in either place. Stored only on this device.</div>'+
    '<div class="field"><label>Token</label><input id="pg_tok" type="password" value="'+esc(progToken())+'" placeholder="github_pat_\u2026" autocapitalize="off" autocorrect="off"></div>'+
    '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button><button class="mb-save" onclick="saveProgToken()">Save</button></div>');
 }
-function saveProgToken(){ lsSet("jbh_prog_token",(document.getElementById("pg_tok").value||"").trim()); closeModal(); renderPrograms(); setSave("ok","Programs token saved."); }
+function saveProgToken(){ var t=(document.getElementById("pg_tok").value||"").trim(); lsSet("jbh_token",t); cfg.token=t; lsDel("jbh_prog_token"); closeModal(); renderPrograms(); setSave("ok","GitHub token saved (all repos)."); }
 
 async function openMaster(code){
   if(!progToken()){ openProgSettings(); return; }
@@ -1123,7 +1123,7 @@ startup();
 var WORKER="https://jb-log.james-52d.workers.dev";
 var _pending=[];
 function adminTok(){ return lsGet("jbh_admin")||""; }
-function setAdminTok(){ var t=prompt("Paste the endpoint admin token:", adminTok()); if(t!=null){ lsSet("jbh_admin", t.trim()); loadPending(); } }
+function setAdminTok(){ var t=prompt("Paste the endpoint admin token:", adminTok()); if(t!=null){ lsSet("jbh_admin", t.trim()); requestNotifPerm(); loadPending(); } }
 function fmtDate(iso){ var m=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p=String(iso).split("-"); return parseInt(p[2],10)+" "+m[parseInt(p[1],10)-1]+" "+p[0]; }
 function updatePendingBadge(n){ var b=document.getElementById("pbadge"); if(!b) return; if(n>0){ b.textContent=n; b.classList.add("show"); } else { b.classList.remove("show"); } }
 function weightsUrl(code){ return "https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/weights/"+encodeURIComponent("weights-"+code+".json"); }
@@ -1174,12 +1174,12 @@ async function approveItem(it){
 }
 async function loadPending(){
   var box=document.getElementById("pendingList"); if(!box) return;
-  if(!adminTok()){ box.innerHTML='<div class="note">Set the endpoint token first (button above).</div>'; updatePendingBadge(0); return; }
+  if(!adminTok()){ box.innerHTML='<div class="note">Set the endpoint token first (button above).</div>'; updatePendingBadge(0); osBadge(0); return; }
   box.innerHTML='<div class="note">Loading\u2026</div>';
   try{ _pending=await fetchPending(); }
   catch(e){ box.innerHTML='<div class="statusline warn">Couldn\u2019t reach the endpoint ('+esc(e.message)+').</div>'; return; }
-  if(!_pending.length){ box.innerHTML='<div class="note">No pending logs.</div>'; updatePendingBadge(0); return; }
-  updatePendingBadge(_pending.length);
+  if(!_pending.length){ box.innerHTML='<div class="note">No pending logs.</div>'; updatePendingBadge(0); osBadge(0); return; }
+  updatePendingBadge(_pending.length); osBadge(_pending.length);
   box.innerHTML=_pending.map(function(it,i){
     var who=esc(rosterName(it.code))+' <span style="opacity:.5;font-weight:500">('+esc(it.code)+')</span>';
     var lines=(it.records||[]).map(function(r){
@@ -1205,6 +1205,16 @@ async function onReject(i){
   try{ await resolvePending(it.key); await loadPending(); }
   catch(e){ alert("Reject failed: "+e.message); }
 }
+
+
+/* ---- home-screen badge for pending items (App Badging API) ---- */
+function osBadge(n){ try{ if("setAppBadge" in navigator){ if(n>0){ navigator.setAppBadge(n); } else if("clearAppBadge" in navigator){ navigator.clearAppBadge(); } } }catch(e){} }
+function requestNotifPerm(){ try{ if("Notification" in window && Notification.permission==="default"){ Notification.requestPermission(); } }catch(e){} }
+async function refreshBadge(){ if(!adminTok()){ osBadge(0); return; } try{ var items=await fetchPending(); osBadge(items.length); updatePendingBadge(items.length); }catch(e){} }
+/* badge on open, then keep it fresh while the app is open (background updates need Web Push) */
+setTimeout(function(){ requestNotifPerm(); refreshBadge(); }, 1500);
+setInterval(function(){ if(document.visibilityState==="visible") refreshBadge(); }, 60000);
+document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible") refreshBadge(); });
 
 </script>
 </body>
