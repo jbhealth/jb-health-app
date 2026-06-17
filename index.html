@@ -226,6 +226,10 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 .pl-rec i{opacity:.6;font-style:normal;font-size:11px;}
 .pl-btns{display:flex;gap:8px;margin-top:10px;}
 .pl-btns button{flex:1;border:none;border-radius:8px;padding:9px;font-weight:600;cursor:pointer;}
+.pl-w{display:none;width:70px;padding:3px 6px;border:1px solid var(--blue,#2E86C1);border-radius:6px;font-size:13px;text-align:right;}
+.pl-card.editing .pl-wv{display:none;}
+.pl-card.editing .pl-w{display:inline-block;}
+.pl-edit{background:#fff;color:var(--navy,#1B3F6B);border:1px solid var(--border,#D4E4F0) !important;}
 .pl-app{background:#27AE60;color:#fff;}
 .pl-rej{background:#fff;color:#9A3030;border:1px solid #E0B4B4 !important;}
 </style>
@@ -1180,14 +1184,17 @@ async function loadPending(){
     var who=esc(rosterName(it.code))+' <span style="opacity:.5;font-weight:500">('+esc(it.code)+')</span>';
     var lines=(it.records||[]).map(function(r){
       var d=r.distance?(" "+esc(r.distance)):(r.reps?(" "+esc(r.reps)):"");
-      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><b>'+esc(r.weight)+'kg</b><i>'+esc(r.program||"")+d+'</i></div>';
+      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span><b class="pl-wv">'+esc(r.weight)+'kg</b><input class="pl-w" type="number" step="0.5" min="0" max="300" value="'+esc(r.weight)+'">kg</span><i>'+esc(r.program||"")+d+'</i></div>';
     }).join("");
-    return '<div class="pl-card"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
-      '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
+    return '<div class="pl-card" id="plc-'+i+'"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
+      '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
   }).join("");
 }
+function toggleEdit(i, btn){ var c=document.getElementById("plc-"+i); if(!c) return; var on=c.classList.toggle("editing"); btn.textContent=on?"Done":"Edit"; }
+function readEdits(i){ var c=document.getElementById("plc-"+i); if(!c) return; var inps=c.querySelectorAll(".pl-w"); (_pending[i].records||[]).forEach(function(r,k){ if(inps[k]){ var v=parseFloat(inps[k].value); if(isFinite(v)&&v>0&&v<=300) r.weight=v; } }); }
 async function onApprove(i, btn){
   var it=_pending[i]; if(!it) return;
+  readEdits(i);
   btn.disabled=true; btn.textContent="Saving\u2026";
   try{ await approveItem(it); await loadPending(); }
   catch(e){ btn.disabled=false; btn.textContent="Approve"; alert("Approve failed: "+e.message); }
