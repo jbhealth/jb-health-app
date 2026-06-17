@@ -160,6 +160,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
   <button class="tab" id="tab-sessions" onclick="switchTab('sessions')">Sessions</button>
   <button class="tab" id="tab-mileage" onclick="switchTab('mileage')">Mileage</button>
   <button class="tab" id="tab-finance" onclick="switchTab('finance')">Finance</button>
+  <button class="tab" id="tab-pending" onclick="switchTab('pending')">Pending<span class="pbadge" id="pbadge"></span></button>
 </div></div>
 <div class="savebar"><span class="dot off" id="syncdot"></span><span id="savestate">Starting…</span></div>
 
@@ -187,6 +188,12 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
   <div class="note">Amount (£) = amount × % business use. Net = income − expenses − mileage claim (pulled live from the Mileage tab). Export CSV for your accountant / Self Assessment.</div>
 </div>
 
+<div class="view" id="view-pending">
+  <div class="actbar"><button class="primary" onclick="loadPending()">Refresh</button><button class="ghost" onclick="setAdminTok()">Endpoint token</button></div>
+  <div class="list" id="pendingList"><div class="note">Tap Refresh to load client submissions.</div></div>
+  <div class="note">Client-submitted loads land here for approval. <b>Approve</b> writes the load into that client's weight history; <b>Reject</b> discards it. Nothing reaches a client's page without your tap.</div>
+</div>
+
 <div class="view active" id="view-programs">
   <div class="actbar"><button class="ghost" onclick="openProgSettings()">Programs token</button><span class="ratechip" id="progStatus" style="cursor:default">—</span></div>
   <div class="search-wrap"><input class="search-input" id="prog_search" placeholder="Search client…" oninput="renderPrograms()"></div>
@@ -208,6 +215,20 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 <div class="modal" id="modal"><div class="modal-box" id="modalBox"></div></div>
 <div class="client-view" id="clientView"><div class="client-view-bar"><button class="cv-close" onclick="closeClientView()">‹ Done</button></div><iframe id="cvFrame" title="Client program"></iframe></div>
 
+<style>
+.pbadge{display:none;margin-left:5px;background:#E74C3C;color:#fff;border-radius:9px;font-size:10px;padding:1px 6px;vertical-align:top;}
+.pbadge.show{display:inline-block;}
+.pl-card{background:#fff;border:1px solid var(--border,#D4E4F0);border-left:3px solid var(--blue,#2E86C1);border-radius:12px;padding:12px 14px;margin-bottom:10px;}
+.pl-head{font-weight:700;color:var(--navy,#1B3F6B);margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.pl-date{font-size:12px;font-weight:500;opacity:.65;}
+.pl-rec{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px solid rgba(0,0,0,0.05);}
+.pl-rec b{color:var(--navy,#1B3F6B);}
+.pl-rec i{opacity:.6;font-style:normal;font-size:11px;}
+.pl-btns{display:flex;gap:8px;margin-top:10px;}
+.pl-btns button{flex:1;border:none;border-radius:8px;padding:9px;font-weight:600;cursor:pointer;}
+.pl-app{background:#27AE60;color:#fff;}
+.pl-rej{background:#fff;color:#9A3030;border:1px solid #E0B4B4 !important;}
+</style>
 <script>
 /* Public file — INITIALS ONLY, no real names. Friendly names live in the private
    synced data.json (data[code].name) and display from there via rosterName(). */
@@ -298,10 +319,11 @@ function b64ToUtf8(b64){ var bin=atob(String(b64).replace(/\s/g,"")),a=new Uint8
 
 /* ---- tabs ---- */
 function switchTab(name){ activeTab=name;
-  ["sessions","mileage","finance","programs"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); });
-  document.getElementById("title").textContent = name==="sessions"?"Session Tracker":(name==="mileage"?"Mileage":(name==="finance"?"Finance":"Programs"));
+  ["sessions","mileage","finance","programs","pending"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); });
+  document.getElementById("title").textContent = name==="sessions"?"Session Tracker":(name==="mileage"?"Mileage":(name==="finance"?"Finance":(name==="pending"?"Pending logs":"Programs")));
   var ht=document.getElementById("headerTools"); if(ht) ht.style.display = (name==="programs")?"none":"";
   renderAll();
+  if(name==="pending") loadPending();
 }
 function renderAll(){ render(); renderMileage(); renderFinance(); renderPrograms(); }
 
@@ -1092,6 +1114,91 @@ function startup(){ loadCfg();
   else { setSave("","Saved on this device. Tap Sync to enable phone\u2194PC sync."); }
 }
 startup();
+
+/* ---- Pending logs (client log-intake endpoint) ---- */
+var WORKER="https://jb-log.james-52d.workers.dev";
+var _pending=[];
+function adminTok(){ return lsGet("jbh_admin")||""; }
+function setAdminTok(){ var t=prompt("Paste the endpoint admin token:", adminTok()); if(t!=null){ lsSet("jbh_admin", t.trim()); loadPending(); } }
+function fmtDate(iso){ var m=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p=String(iso).split("-"); return parseInt(p[2],10)+" "+m[parseInt(p[1],10)-1]+" "+p[0]; }
+function updatePendingBadge(n){ var b=document.getElementById("pbadge"); if(!b) return; if(n>0){ b.textContent=n; b.classList.add("show"); } else { b.classList.remove("show"); } }
+function weightsUrl(code){ return "https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/weights/"+encodeURIComponent("weights-"+code+".json"); }
+async function ghGetWeights(code){
+  var res=await fetch(weightsUrl(code)+"?ref="+encodeURIComponent(cfg.branch), {headers:ghHeaders()});
+  if(res.status===404) return {records:[], sha:null, doc:null};
+  if(!res.ok) throw new Error("read store "+res.status);
+  var j=await res.json(); var doc=JSON.parse(b64ToUtf8(j.content));
+  return {records:doc.records||[], sha:j.sha, doc:doc};
+}
+async function ghPutWeights(code, doc, sha){
+  var body={ message:"approve client log "+code+" "+new Date().toISOString(), content:utf8ToB64(JSON.stringify(doc,null,2)), branch:cfg.branch };
+  if(sha) body.sha=sha;
+  var res=await fetch(weightsUrl(code), {method:"PUT", headers:ghHeaders(), body:JSON.stringify(body)});
+  if(!res.ok) throw new Error("write store "+res.status);
+  return res.json();
+}
+async function fetchPending(){
+  var res=await fetch(WORKER+"/pending", {headers:{"x-jb-admin":adminTok()}});
+  if(res.status===401) throw new Error("admin token rejected");
+  if(!res.ok) throw new Error("endpoint "+res.status);
+  return (await res.json()).items||[];
+}
+async function resolvePending(key){
+  await fetch(WORKER+"/resolve", {method:"POST", headers:{"content-type":"application/json","x-jb-admin":adminTok()}, body:JSON.stringify({key:key})});
+}
+async function approveItem(it){
+  if(!ghConfigured()) throw new Error("connect the data repo in Sync first");
+  var got=await ghGetWeights(it.code);
+  var doc=got.doc||{code:it.code, schema:1, generated:"", records:[]};
+  doc.records=doc.records||[];
+  doc.records.forEach(function(r){ r.order=(typeof r.order==="number"?r.order:0)+1; });
+  it.records.forEach(function(r){
+    var lead = r.distance ? r.distance : (r.reps||"");
+    var raw_sets = (lead? lead+" \u00b7 " : "") + r.weight + "kg";
+    doc.records.unshift({
+      ex:r.ex, date:it.date, date_inferred:false, order:0,
+      block_title:"Weight log \u00b7 "+fmtDate(it.date)+(r.program? " \u00b7 "+r.program : ""),
+      program:r.program||null, type:"log", source:"client",
+      weight:r.weight, count:1, unit:"kg",
+      sets:(typeof r.sets==="number"?r.sets:null), reps:r.reps||null, distance:r.distance||null,
+      raw_sets:raw_sets
+    });
+  });
+  doc.code=it.code; doc.schema=doc.schema||1; doc.generated=new Date().toISOString().slice(0,10);
+  await ghPutWeights(it.code, doc, got.sha);
+  await resolvePending(it.key);
+}
+async function loadPending(){
+  var box=document.getElementById("pendingList"); if(!box) return;
+  if(!adminTok()){ box.innerHTML='<div class="note">Set the endpoint token first (button above).</div>'; updatePendingBadge(0); return; }
+  box.innerHTML='<div class="note">Loading\u2026</div>';
+  try{ _pending=await fetchPending(); }
+  catch(e){ box.innerHTML='<div class="statusline warn">Couldn\u2019t reach the endpoint ('+esc(e.message)+').</div>'; return; }
+  if(!_pending.length){ box.innerHTML='<div class="note">No pending logs.</div>'; updatePendingBadge(0); return; }
+  updatePendingBadge(_pending.length);
+  box.innerHTML=_pending.map(function(it,i){
+    var who=esc(rosterName(it.code))+' <span style="opacity:.5;font-weight:500">('+esc(it.code)+')</span>';
+    var lines=(it.records||[]).map(function(r){
+      var d=r.distance?(" "+esc(r.distance)):(r.reps?(" "+esc(r.reps)):"");
+      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><b>'+esc(r.weight)+'kg</b><i>'+esc(r.program||"")+d+'</i></div>';
+    }).join("");
+    return '<div class="pl-card"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
+      '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
+  }).join("");
+}
+async function onApprove(i, btn){
+  var it=_pending[i]; if(!it) return;
+  btn.disabled=true; btn.textContent="Saving\u2026";
+  try{ await approveItem(it); await loadPending(); }
+  catch(e){ btn.disabled=false; btn.textContent="Approve"; alert("Approve failed: "+e.message); }
+}
+async function onReject(i){
+  var it=_pending[i]; if(!it) return;
+  if(!confirm("Discard this submission?")) return;
+  try{ await resolvePending(it.key); await loadPending(); }
+  catch(e){ alert("Reject failed: "+e.message); }
+}
+
 </script>
 </body>
 </html>
