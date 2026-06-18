@@ -616,10 +616,13 @@ function savePay(code){ var s=round2(parseFloat(document.getElementById("m_sessi
       amountPre:round2(s*rate),pct:100,method:method,notes:"PT sessions",linkId:linkId});
   }
   closeModal(); render(); renderFinance(); save(); }
-function openSetBal(code,name){ showModal('<h3>Set balance — '+esc(name)+'</h3>'+
-  '<div class="field"><label>Current balance. + = in credit, \u2212 = owes you.</label><input type="number" inputmode="decimal" step="any" id="m_bal" value="'+balance(code)+'"></div>'+
+function openSetBal(code,name){ var cur=balance(code), owe=cur<0;
+  showModal('<h3>Set balance — '+esc(name)+'</h3>'+
+  '<div class="field"><label>Status</label><select id="m_balsign"><option value="credit"'+(owe?'':' selected')+'>In credit (paid ahead)</option><option value="owe"'+(owe?' selected':'')+'>Owes you</option></select></div>'+
+  '<div class="field"><label>Sessions</label><input type="number" inputmode="decimal" step="any" min="0" id="m_bal" value="'+Math.abs(cur)+'"></div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveBal(\''+code+'\')">Save</button></div>'); }
-function saveBal(code){ var target=round2(parseFloat(document.getElementById("m_bal").value))||0;
+function saveBal(code){ var mag=Math.abs(round2(parseFloat(document.getElementById("m_bal").value))||0);
+  var target=round2(document.getElementById("m_balsign").value==="owe"?-mag:mag);
   var ents=data[code].entries.filter(function(e){return e.type!=="opening";}),nonOpening=0;
   for(var i=0;i<ents.length;i++){ nonOpening+=ents[i].type==="out"?-ents[i].sessions:ents[i].sessions; }
   var opening=round2(target-nonOpening); if(opening!==0) ents.unshift({id:uid(),date:today(),type:"opening",sessions:opening});
