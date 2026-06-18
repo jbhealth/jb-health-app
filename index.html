@@ -1301,10 +1301,11 @@ function loadMap(){
       var raw=atob(d.content.replace(/\n/g,""));
       var frame=document.getElementById("mapFrame");
       frame.innerHTML="";
-      var shadow=frame.attachShadow({mode:"open"});
-      var wrapper=document.createElement("div");
-      wrapper.innerHTML=raw;
-      shadow.appendChild(wrapper);
+      var iframe=document.createElement("iframe");
+      iframe.style.cssText="width:100%;height:calc(100vh - 120px);border:none;border-radius:8px;display:block;";
+      iframe.setAttribute("sandbox","allow-scripts allow-same-origin");
+      frame.appendChild(iframe);
+      iframe.srcdoc=raw;
       mapLoaded=true;
     })
     .catch(function(e){
