@@ -360,6 +360,10 @@ var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Co
 var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
 
 var data = {}, mileage = {rate:0.45, trips:[]}, finance = {txns:[]}, ONLINE_NAMES = {};
+var RATES = {};                         /* prefixed-code -> per-session GBP (from private pricing.json) */
+var RATES_MANUAL = [];                   /* prefixed codes handled by hand (free/family) */
+function rateFor(code){ var v = RATES[code]; return (typeof v === "number") ? v : null; }
+function financeCode(code){ return prefixFor(code) + bareCode(code); }   /* session key -> prefixed finance code */
 var dataLoaded = false, seeded = false, activeTab = "programs";
 var cfg = {owner:"",repo:"",branch:"main",path:"data.json",token:""};
 var pushTimer=null, syncing=false, memLS={};
@@ -441,6 +445,17 @@ async function pushToGitHub(){
   }catch(e){ setSave("warn","Offline — saved on device, will sync next change."); }
   syncing=false;
 }
+async function pullPricing(){
+  if(!ghConfigured()) return;
+  try{
+    var url="https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/pricing.json?ref="+encodeURIComponent(cfg.branch);
+    var res=await fetch(url, {headers:ghHeaders()});
+    if(!res.ok) return;                       /* no pricing file -> auto-fill simply stays off */
+    var j=await res.json(), p=JSON.parse(b64ToUtf8(j.content));
+    RATES = p.per_session_gbp || {};
+    RATES_MANUAL = p.manual || [];
+  }catch(e){ /* leave RATES empty; payments still record, just without a finance line */ }
+}
 async function pullFromGitHub(silent){
   if(!ghConfigured()) return false;
   try{
@@ -450,6 +465,7 @@ async function pullFromGitHub(silent){
     if(!res.ok){ setSave("warn","Couldn\u2019t reach GitHub — using device copy."); return false; }
     var j=await res.json(); lsSet("jbh_sha", j.sha);
     applyBundle(JSON.parse(b64ToUtf8(j.content))); cacheLocal(); renderAll();
+    pullPricing();
     if(!silent) setSave("ok","Pulled latest from GitHub \u2713");
     return true;
   }catch(e){ setSave("warn","Couldn\u2019t reach GitHub — using device copy."); return false; }
@@ -575,12 +591,31 @@ function openSession(code,name){ showModal('<h3>Session done — '+esc(name)+'</
   '<div class="field"><label>Date</label><input type="date" id="s_date" value="'+today()+'"></div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveSession(\''+code+'\')">Save</button></div>'); }
 function saveSession(code){ var s=round2(parseFloat(document.getElementById("s_sessions").value)); if(!s||s<=0){closeModal();return;} data[code].entries.push({id:uid(),date:document.getElementById("s_date").value,type:"out",sessions:s}); closeModal(); render(); save(); }
-function openPay(code,name){ showModal('<h3>Payment — '+esc(name)+'</h3>'+
-  '<div class="field"><label>Sessions paid for</label><input type="number" inputmode="decimal" step="any" id="m_sessions" value="1" min="0"></div>'+
+function openPay(code,name){ var fc=financeCode(code), r=rateFor(fc);
+  var note = (r!==null&&r>0) ? ('Will add a finance line: <b>'+fc+'</b> at £'+r+'/session.') : 'No rate set — records the payment only, no finance line.';
+  showModal('<h3>Payment — '+esc(name)+'</h3>'+
+  '<div class="field"><label>Sessions paid for</label><input type="number" inputmode="decimal" step="any" id="m_sessions" value="1" min="0" oninput="payPreview(\''+code+'\')"></div>'+
   '<div class="field"><label>Method</label><select id="m_method"><option>Bank transfer</option><option>Cash</option><option>Friends/Family</option></select></div>'+
   '<div class="field"><label>Date</label><input type="date" id="m_date" value="'+today()+'"></div>'+
-  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="savePay(\''+code+'\')">Save</button></div>'); }
-function savePay(code){ var s=round2(parseFloat(document.getElementById("m_sessions").value)); if(!s||s<=0){closeModal();return;} data[code].entries.push({id:uid(),date:document.getElementById("m_date").value,type:"in",sessions:s,method:document.getElementById("m_method").value}); closeModal(); render(); save(); }
+  '<div class="hint" id="m_preview">'+note+'</div>'+
+  '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="savePay(\''+code+'\')">Save</button></div>');
+  payPreview(code); }
+function payPreview(code){ var el=document.getElementById("m_preview"); if(!el) return;
+  var fc=financeCode(code), r=rateFor(fc), s=round2(parseFloat((document.getElementById("m_sessions")||{}).value));
+  if(r===null||r<=0){ el.innerHTML='No rate set — records the payment only, no finance line.'; return; }
+  if(!s||s<=0){ el.innerHTML='Will add a finance line: <b>'+fc+'</b> at £'+r+'/session.'; return; }
+  el.innerHTML='Will add finance line: <b>'+fc+'</b> · '+s+' × £'+r+' = <b>£'+round2(s*r)+'</b> (100% business).'; }
+function savePay(code){ var s=round2(parseFloat(document.getElementById("m_sessions").value)); if(!s||s<=0){closeModal();return;}
+  var dt=document.getElementById("m_date").value, method=document.getElementById("m_method").value;
+  var eid=uid(), linkId="pay_"+eid;
+  data[code].entries.push({id:eid,date:dt,type:"in",sessions:s,method:method,linkId:linkId});
+  /* Auto finance line: sessions x rate, only when a numeric rate exists (free/family skipped) */
+  var fcode=financeCode(code), rate=rateFor(fcode);
+  if(rate!==null && rate>0){
+    finance.txns.push({id:uid(),date:dt,description:fcode,category:"Sales / Revenue",type:"Income",
+      amountPre:round2(s*rate),pct:100,method:method,notes:"PT sessions",linkId:linkId});
+  }
+  closeModal(); render(); renderFinance(); save(); }
 function openSetBal(code,name){ showModal('<h3>Set balance — '+esc(name)+'</h3>'+
   '<div class="field"><label>Current balance. + = in credit, \u2212 = owes you.</label><input type="number" inputmode="decimal" step="any" id="m_bal" value="'+balance(code)+'"></div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveBal(\''+code+'\')">Save</button></div>'); }
@@ -589,7 +624,11 @@ function saveBal(code){ var target=round2(parseFloat(document.getElementById("m_
   for(var i=0;i<ents.length;i++){ nonOpening+=ents[i].type==="out"?-ents[i].sessions:ents[i].sessions; }
   var opening=round2(target-nonOpening); if(opening!==0) ents.unshift({id:uid(),date:today(),type:"opening",sessions:opening});
   data[code].entries=ents; closeModal(); render(); save(); }
-function delEntry(code,id){ data[code].entries=data[code].entries.filter(function(e){return e.id!==id;}); render(); save(); }
+function delEntry(code,id){
+  var ent=(data[code].entries||[]).filter(function(e){return e.id===id;})[0];
+  data[code].entries=data[code].entries.filter(function(e){return e.id!==id;});
+  if(ent&&ent.linkId){ finance.txns=(finance.txns||[]).filter(function(t){return t.linkId!==ent.linkId;}); renderFinance(); }
+  render(); save(); }
 function openQuickLog(){ showModal('<h3>Log today</h3>'+
   '<div class="hint"><b>Out</b> = clients seen (comma-separated initials), each \u22121 — add a number for part/extra ("AC 1.5"). <b>In</b> = payments, one per line: <code>INITIALS sessions method</code>. Unknown codes are skipped.</div>'+
   '<div class="field"><label>Date</label><input type="date" id="ql_date" value="'+today()+'" oninput="qlPreview()"></div>'+
@@ -894,7 +933,11 @@ function saveTxn(id){ var rec={ date:document.getElementById("tx_date").value||t
   if(isNaN(rec.pct)) rec.pct=100; if(!rec.amountPre){ alert("Enter an amount."); return; }
   if(id){ for(var i=0;i<finance.txns.length;i++){ if(finance.txns[i].id===id){ rec.id=id; finance.txns[i]=rec; break; } } } else { rec.id=uid(); finance.txns.push(rec); }
   closeModal(); renderFinance(); saveF(); }
-function delTxn(id){ if(!confirm("Delete this transaction?")) return; finance.txns=finance.txns.filter(function(t){return t.id!==id;}); renderFinance(); saveF(); }
+function delTxn(id){ if(!confirm("Delete this transaction?")) return;
+  var t=(finance.txns||[]).filter(function(x){return x.id===id;})[0];
+  finance.txns=finance.txns.filter(function(x){return x.id!==id;});
+  if(t&&t.linkId){ Object.keys(data).forEach(function(c){ var b=(data[c].entries||[]).length; data[c].entries=data[c].entries.filter(function(e){return e.linkId!==t.linkId;}); if(data[c].entries.length!==b) render(); }); }
+  renderFinance(); saveF(); }
 function exportFinance(){ var rows=[["Date","Description","Category","Type","Amount (pre-%)","% Business use","Amount (£)","Payment Method","Notes"]];
   (finance.txns||[]).slice().sort(function(a,b){return (a.date||"").localeCompare(b.date||"");}).forEach(function(t){ rows.push([t.date,t.description,t.category,t.type,Number(t.amountPre)||0,Number(t.pct)||0,txnAmount(t),t.method,t.notes]); });
   downloadCSV(rows,"JB_Transactions_"+today()+".csv"); }
