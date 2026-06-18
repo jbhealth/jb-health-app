@@ -385,13 +385,13 @@ function b64ToUtf8(b64){ var bin=atob(String(b64).replace(/\s/g,"")),a=new Uint8
 
 /* ---- tabs ---- */
 function switchTab(name){ activeTab=name;
-  ["sessions","mileage","finance","programs","pending","map"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); 
+  ["sessions","mileage","finance","programs","pending","map"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); });
   // sync bottom nav
   ["sessions","mileage","finance","programs","pending","map"].forEach(function(t){
     var bn = document.getElementById("bn-"+t);
     if(bn) bn.classList.toggle("active", t===name);
   });
-});
+  if(name==="map") loadMap();
   document.getElementById("title").textContent = name==="sessions"?"Session Tracker":(name==="mileage"?"Mileage":(name==="finance"?"Finance":(name==="pending"?"Pending logs":(name==="map"?"System map":"Programs"))));
   var ht=document.getElementById("headerTools"); if(ht) ht.style.display = (name==="programs")?"none":"";
   renderAll();
