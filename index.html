@@ -144,6 +144,56 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
   .modal-box{position:relative;}
   .sum-sub{font-size:10px;opacity:.65;margin-top:2px;white-space:nowrap;}
   .fo-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;background:rgba(0,0,0,0.06);font-size:17px;line-height:1;cursor:pointer;color:#444;}
+
+/* ── Mobile bottom nav (≤767px) ── */
+@media (max-width: 767px) {
+  .tabs { display: none; }
+
+  body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: calc(56px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--navy);
+    z-index: 1000;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .bn-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.55);
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 2px 4px;
+    transition: color 0.15s;
+    position: relative;
+  }
+  .bn-tab.active { color: #fff; }
+  .bn-tab svg { width: 22px; height: 22px; stroke-width: 1.8; }
+  .bn-tab .bn-label { line-height: 1; }
+  .bn-tab .pbadge {
+    position: absolute;
+    top: 4px;
+    right: calc(50% - 18px);
+  }
+}
+
+/* Hide bottom nav on desktop */
+@media (min-width: 768px) {
+  .bottom-nav { display: none; }
+}
+
 </style>
 </head>
 <body>
@@ -335,7 +385,13 @@ function b64ToUtf8(b64){ var bin=atob(String(b64).replace(/\s/g,"")),a=new Uint8
 
 /* ---- tabs ---- */
 function switchTab(name){ activeTab=name;
-  ["sessions","mileage","finance","programs","pending","map"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); });
+  ["sessions","mileage","finance","programs","pending","map"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); 
+  // sync bottom nav
+  ["sessions","mileage","finance","programs","pending","map"].forEach(function(t){
+    var bn = document.getElementById("bn-"+t);
+    if(bn) bn.classList.toggle("active", t===name);
+  });
+});
   document.getElementById("title").textContent = name==="sessions"?"Session Tracker":(name==="mileage"?"Mileage":(name==="finance"?"Finance":(name==="pending"?"Pending logs":(name==="map"?"System map":"Programs"))));
   var ht=document.getElementById("headerTools"); if(ht) ht.style.display = (name==="programs")?"none":"";
   renderAll();
@@ -1138,7 +1194,9 @@ var _pending=[];
 function adminTok(){ return lsGet("jbh_admin")||""; }
 function setAdminTok(){ var t=prompt("Paste the endpoint admin token:", adminTok()); if(t!=null){ lsSet("jbh_admin", t.trim()); requestNotifPerm(); loadPending(); } }
 function fmtDate(iso){ var m=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p=String(iso).split("-"); return parseInt(p[2],10)+" "+m[parseInt(p[1],10)-1]+" "+p[0]; }
-function updatePendingBadge(n){ var b=document.getElementById("pbadge"); if(!b) return; if(n>0){ b.textContent=n; b.classList.add("show"); } else { b.classList.remove("show"); } }
+function updatePendingBadge(n){ var b=document.getElementById("pbadge"); if(!b) return; if(n>0){ b.textContent=n; b.classList.add("show"); 
+  var b2=document.getElementById("pbadge-bn"); if(b2){ if(n>0){ b2.textContent=n; b2.classList.add("show"); } else { b2.classList.remove("show"); } }
+} else { b.classList.remove("show"); } }
 function weightsUrl(code){ return "https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/weights/"+encodeURIComponent("weights-"+code+".json"); }
 async function ghGetWeights(code){
   var res=await fetch(weightsUrl(code)+"?ref="+encodeURIComponent(cfg.branch), {headers:ghHeaders()});
@@ -1255,5 +1313,33 @@ function loadMap(){
 }
 
 </script>
+
+<nav class="bottom-nav">
+  <button class="bn-tab active" id="bn-programs" onclick="switchTab('programs')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span class="bn-label">Programs</span>
+  </button>
+  <button class="bn-tab" id="bn-sessions" onclick="switchTab('sessions')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span class="bn-label">Sessions</span>
+  </button>
+  <button class="bn-tab" id="bn-mileage" onclick="switchTab('mileage')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+    <span class="bn-label">Mileage</span>
+  </button>
+  <button class="bn-tab" id="bn-finance" onclick="switchTab('finance')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+    <span class="bn-label">Finance</span>
+  </button>
+  <button class="bn-tab" id="bn-pending" onclick="switchTab('pending')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+    <span class="bn-label">Pending</span><span class="pbadge" id="pbadge-bn"></span>
+  </button>
+  <button class="bn-tab" id="bn-map" onclick="switchTab('map')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+    <span class="bn-label">Map</span>
+  </button>
+</nav>
+
 </body>
 </html>
