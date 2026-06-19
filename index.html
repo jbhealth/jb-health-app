@@ -430,6 +430,24 @@ function persist(){
 }
 function save(){ persist(); } function saveM(){ persist(); } function saveF(){ persist(); }
 
+var pillDirty = {};                         /* session keys whose balance pill needs rewriting */
+function markPill(code){ if(code) pillDirty[code]=true; }
+function pillFile(code){ return "JB_"+code+".json"; }   /* literal key: in-person JB_KB.json; online JB_OL_AB.json */
+async function pushPill(code){
+  if(!ghConfigured()) return;
+  var path="balances/"+pillFile(code);
+  var url="https://api.github.com/repos/"+cfg.owner+"/programs/contents/"+path;
+  var body={ message:"Balance pill "+pillFile(code), content:utf8ToB64(JSON.stringify({b:balance(code)})), branch:"main" };
+  try{
+    var head=await fetch(url+"?ref=main",{headers:ghHeaders()});
+    if(head.ok){ var j=await head.json(); if(j&&j.sha) body.sha=j.sha; }
+    await fetch(url,{method:"PUT",headers:ghHeaders(),body:JSON.stringify(body)});
+  }catch(e){ /* best-effort: device + data sync already hold the truth */ }
+}
+async function flushPills(){
+  var codes=Object.keys(pillDirty); pillDirty={};
+  for(var i=0;i<codes.length;i++){ await pushPill(codes[i]); }
+}
 async function pushToGitHub(){
   if(!ghConfigured()) return;
   if(syncing){ pushTimer=setTimeout(pushToGitHub,800); return; }
@@ -443,6 +461,7 @@ async function pushToGitHub(){
     if(!res.ok){ setSave("warn","Sync failed ("+res.status+") — saved on device."); syncing=false; return; }
     var j=await res.json(); if(j&&j.content&&j.content.sha) lsSet("jbh_sha", j.content.sha);
     lsSet("jbh_lastsync", String(Date.now())); setSave("ok","Synced to GitHub \u2713");
+    flushPills();
   }catch(e){ setSave("warn","Offline — saved on device, will sync next change."); }
   syncing=false;
 }
@@ -586,12 +605,12 @@ function suggestCode(){ var c=document.getElementById("a_code"); if(c.dataset.to
   c.value=p.length>=2?(p[0][0]+p[p.length-1][0]).toUpperCase():p.length===1?p[0].slice(0,2).toUpperCase():""; }
 function saveAdd(){ var name=document.getElementById("a_name").value.trim(),code=(document.getElementById("a_code").value.trim()||"").toUpperCase(),bal=round2(parseFloat(document.getElementById("a_bal").value))||0;
   if(!name){alert("Enter a name.");return;} if(!code){alert("Enter a code.");return;} if(data[code]){alert('Code "'+code+'" already used by '+(data[code].name||code)+'.');return;}
-  data[code]={name:name,entries:[]}; if(bal!==0) data[code].entries.push({id:uid(),date:today(),type:"opening",sessions:bal}); closeModal(); render(); save(); }
+  data[code]={name:name,entries:[]}; if(bal!==0) data[code].entries.push({id:uid(),date:today(),type:"opening",sessions:bal}); markPill(code); closeModal(); render(); save(); }
 function openSession(code,name){ showModal('<h3>Session done — '+esc(name)+'</h3>'+
   '<div class="field"><label>Sessions delivered</label><input type="number" inputmode="decimal" step="any" id="s_sessions" value="1" min="0"></div>'+
   '<div class="field"><label>Date</label><input type="date" id="s_date" value="'+today()+'"></div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveSession(\''+code+'\')">Save</button></div>'); }
-function saveSession(code){ var s=round2(parseFloat(document.getElementById("s_sessions").value)); if(!s||s<=0){closeModal();return;} data[code].entries.push({id:uid(),date:document.getElementById("s_date").value,type:"out",sessions:s}); closeModal(); render(); save(); }
+function saveSession(code){ var s=round2(parseFloat(document.getElementById("s_sessions").value)); if(!s||s<=0){closeModal();return;} data[code].entries.push({id:uid(),date:document.getElementById("s_date").value,type:"out",sessions:s}); markPill(code); closeModal(); render(); save(); }
 function openPay(code,name){ var fc=financeCode(code), r=rateFor(fc);
   var note = (r!==null&&r>0) ? ('Will add a finance line: <b>'+fc+'</b> at £'+r+'/session.') : 'No rate set — records the payment only, no finance line.';
   showModal('<h3>Payment — '+esc(name)+'</h3>'+
@@ -609,7 +628,7 @@ function payPreview(code){ var el=document.getElementById("m_preview"); if(!el) 
 function savePay(code){ var s=round2(parseFloat(document.getElementById("m_sessions").value)); if(!s||s<=0){closeModal();return;}
   var dt=document.getElementById("m_date").value, method=document.getElementById("m_method").value;
   var eid=uid(), linkId="pay_"+eid;
-  data[code].entries.push({id:eid,date:dt,type:"in",sessions:s,method:method,linkId:linkId});
+  data[code].entries.push({id:eid,date:dt,type:"in",sessions:s,method:method,linkId:linkId}); markPill(code);
   /* Auto finance line: sessions x rate, only when a numeric rate exists (free/family skipped) */
   var fcode=financeCode(code), rate=rateFor(fcode);
   if(rate!==null && rate>0){
@@ -627,12 +646,12 @@ function saveBal(code){ var mag=Math.abs(round2(parseFloat(document.getElementBy
   var ents=data[code].entries.filter(function(e){return e.type!=="opening";}),nonOpening=0;
   for(var i=0;i<ents.length;i++){ nonOpening+=ents[i].type==="out"?-ents[i].sessions:ents[i].sessions; }
   var opening=round2(target-nonOpening); if(opening!==0) ents.unshift({id:uid(),date:today(),type:"opening",sessions:opening});
-  data[code].entries=ents; closeModal(); render(); save(); }
+  data[code].entries=ents; markPill(code); closeModal(); render(); save(); }
 function delEntry(code,id){
   var ent=(data[code].entries||[]).filter(function(e){return e.id===id;})[0];
   data[code].entries=data[code].entries.filter(function(e){return e.id!==id;});
   if(ent&&ent.linkId){ finance.txns=(finance.txns||[]).filter(function(t){return t.linkId!==ent.linkId;}); renderFinance(); }
-  render(); save(); }
+  markPill(code); render(); save(); }
 function openQuickLog(){ showModal('<h3>Log today</h3>'+
   '<div class="hint"><b>Out</b> = clients seen (comma-separated initials), each \u22121 — add a number for part/extra ("AC 1.5"). <b>In</b> = payments, one per line: <code>INITIALS sessions method</code>. Unknown codes are skipped.</div>'+
   '<div class="field"><label>Date</label><input type="date" id="ql_date" value="'+today()+'" oninput="qlPreview()"></div>'+
@@ -650,8 +669,8 @@ function qlPreview(){ var p=parseQuickLog(),el=document.getElementById("ql_previ
   if(p.unknown.length) bits.push('<span style="color:var(--red)">\u26a0 Unknown, will skip: '+p.unknown.join(", ")+'</span>');
   el.innerHTML=bits.length?bits.join("<br>"):"Nothing to log yet."; }
 function applyQuickLog(){ var p=parseQuickLog(); if(!p.outs.length&&!p.ins.length){closeModal();return;} var d=document.getElementById("ql_date").value||today();
-  p.outs.forEach(function(o){ data[o.code].entries.push({id:uid(),date:d,type:"out",sessions:o.sessions}); });
-  p.ins.forEach(function(o){ data[o.code].entries.push({id:uid(),date:d,type:"in",sessions:o.sessions,method:o.method}); });
+  p.outs.forEach(function(o){ data[o.code].entries.push({id:uid(),date:d,type:"out",sessions:o.sessions}); markPill(o.code); });
+  p.ins.forEach(function(o){ data[o.code].entries.push({id:uid(),date:d,type:"in",sessions:o.sessions,method:o.method}); markPill(o.code); });
   closeModal(); render(); save(); var msg="Logged "+p.outs.length+" out and "+p.ins.length+" in."; if(p.unknown.length) msg+="\nSkipped: "+p.unknown.join(", "); alert(msg); }
 
 /* ---- mileage ---- */
@@ -940,7 +959,7 @@ function saveTxn(id){ var rec={ date:document.getElementById("tx_date").value||t
 function delTxn(id){ if(!confirm("Delete this transaction?")) return;
   var t=(finance.txns||[]).filter(function(x){return x.id===id;})[0];
   finance.txns=finance.txns.filter(function(x){return x.id!==id;});
-  if(t&&t.linkId){ Object.keys(data).forEach(function(c){ var b=(data[c].entries||[]).length; data[c].entries=data[c].entries.filter(function(e){return e.linkId!==t.linkId;}); if(data[c].entries.length!==b) render(); }); }
+  if(t&&t.linkId){ Object.keys(data).forEach(function(c){ var b=(data[c].entries||[]).length; data[c].entries=data[c].entries.filter(function(e){return e.linkId!==t.linkId;}); if(data[c].entries.length!==b){ markPill(c); render(); } }); }
   renderFinance(); saveF(); }
 function exportFinance(){ var rows=[["Date","Description","Category","Type","Amount (pre-%)","% Business use","Amount (£)","Payment Method","Notes"]];
   (finance.txns||[]).slice().sort(function(a,b){return (a.date||"").localeCompare(b.date||"");}).forEach(function(t){ rows.push([t.date,t.description,t.category,t.type,Number(t.amountPre)||0,Number(t.pct)||0,txnAmount(t),t.method,t.notes]); });
