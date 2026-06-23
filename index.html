@@ -312,8 +312,12 @@ var CLIENT_NAMES = {
    (e.g. AB = Anna in-person, Amelia online) never collide. Public file holds initials only;
    friendly names come from the private synced data.json (online_names) via rosterName(). --- */
 var CLIENT_NAMES_ONLINE = {
-  "OL_GC":"GC",
-  "OL_golf_example":"golf_example",
+  "OL_GC":"GC"
+};
+/* Example/showcase programmes: live demo pages, shown in their own collapsed section and
+   kept out of the real client roster. No editable trainer master. */
+var EXAMPLE_PROGRAMS = {
+  "OL_golf_example":"Golf demo",
   "OL_back_example":"Sore back demo"
 };
 /* Demo showcases have no editable trainer master, so hide their Master button in the roster. */
@@ -336,7 +340,7 @@ var CLIENTS = Object.keys(CLIENT_NAMES).map(function(c){ return [c, CLIENT_NAMES
 var ROSTER_CODES = Object.keys(CLIENT_NAMES);
 function onlineRec(code){ var b=bareCode(code); return ONLINE_NAMES[code] || ONLINE_NAMES["OL_"+b] || null; }
 function rosterName(code){
-  if(isOnline(code)){ var b=bareCode(code); var rec=onlineRec(code); var nm=rec&&(typeof rec==="object"?rec.name:rec); return nm || CLIENT_NAMES_ONLINE[code] || CLIENT_NAMES_ONLINE[b] || b; }
+  if(isOnline(code)){ var b=bareCode(code); var rec=onlineRec(code); var nm=rec&&(typeof rec==="object"?rec.name:rec); return nm || CLIENT_NAMES_ONLINE[code] || EXAMPLE_PROGRAMS[code] || CLIENT_NAMES_ONLINE[b] || b; }
   return (data[code] && data[code].name) || CLIENT_NAMES[code] || code;
 }
 function isGolf(code){
@@ -1092,6 +1096,7 @@ function renderPrograms(){
   var collapsed={};
   var secNodes=document.querySelectorAll("#prog_list .roster-section");
   for(var si=0;si<secNodes.length;si++){ if(!secNodes[si].classList.contains("open")) collapsed[secNodes[si].getAttribute("data-sec")]=1; }
+  if(secNodes.length===0) collapsed["examples"]=1;  /* examples start collapsed until opened */
   function progRow(code){
     var name=rosterName(code);
     if(name.toLowerCase().indexOf(q)===-1) return "";
@@ -1131,7 +1136,7 @@ function renderPrograms(){
   } else {
     inHtml = progSection("inperson","In-person",ipCodes,false);
   }
-  var html = inHtml + progSection("online","Online",Object.keys(CLIENT_NAMES_ONLINE),false);
+  var html = inHtml + progSection("online","Online",Object.keys(CLIENT_NAMES_ONLINE),false) + progSection("examples","Example programmes",Object.keys(EXAMPLE_PROGRAMS),false);
   listEl.innerHTML = html || '<div class="empty-hist" style="padding:20px">No clients match.</div>';
 }
 
