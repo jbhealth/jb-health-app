@@ -923,7 +923,9 @@ function renderFinance(){ var income=0,expense=0;
   (finance.txns||[]).forEach(function(t){ var a=txnAmount(t); if(t.type==="Income") income+=a; else expense+=a; });
   var mClaim=0; (mileage.trips||[]).forEach(function(t){ mClaim+=tripMiles(t)*mileage.rate; });
   var net=round2(income-expense-mClaim);
-  document.getElementById("f_summary").innerHTML='<div class="sum-card"><div class="sum-num green">'+gbp(income)+'</div><div class="sum-label">Income</div></div>'+
+  var bacsInc=0,cashInc=0,otherInc=0;
+  (finance.txns||[]).forEach(function(t){ if(t.type!=="Income") return; var a=txnAmount(t),m=t.method||""; if(m==="Cash") cashInc+=a; else if(m==="BACS") bacsInc+=a; else otherInc+=a; });
+  document.getElementById("f_summary").innerHTML='<div class="sum-card"><div class="sum-num green">'+gbp(bacsInc)+'</div><div class="sum-label">Income</div>'+((cashInc||otherInc)?'<div class="sum-sub">+ '+gbp(cashInc)+' cash'+(otherInc?' \u00b7 '+gbp(otherInc)+' other':'')+'</div>':'')+'</div>'+
     '<div class="sum-card"><div class="sum-num red">'+gbp(expense)+'</div><div class="sum-label">Expenses</div><div class="sum-sub">+ '+gbp(round2(mClaim))+' mileage</div></div>'+
     '<div class="sum-card"><div class="sum-num '+(net<0?'red':'')+'">'+gbp(net)+'</div><div class="sum-label">Net</div></div>';
   var byMonth={},byCat={};
@@ -932,7 +934,11 @@ function renderFinance(){ var income=0,expense=0;
   months.forEach(function(mo){ var x=byMonth[mo]; mh+='<div class="mini-row"><span>'+mo+'</span><span>'+gbp(x.inc-x.exp)+'  ('+gbp(x.inc)+' in / '+gbp(x.exp)+' out)</span></div>'; });
   var cats=Object.keys(byCat).sort(function(a,b){return byCat[b]-byCat[a];}),ch="";
   cats.forEach(function(c){ ch+='<div class="mini-row"><span>'+esc(c)+'</span><span>'+gbp(byCat[c])+'</span></div>'; });
-  document.getElementById("f_breakdown").innerHTML=(months.length?'<h4>Monthly (net)</h4>'+mh:'')+(cats.length?'<h4>Expenses by category</h4>'+ch:'');
+  var byMethod={};
+  (finance.txns||[]).forEach(function(t){ if(t.type!=="Income") return; var m=t.method||"Unspecified"; if(!byMethod[m]) byMethod[m]={sum:0,n:0}; byMethod[m].sum+=txnAmount(t); byMethod[m].n++; });
+  var meths=Object.keys(byMethod).sort(function(a,b){return byMethod[b].sum-byMethod[a].sum;}),pm="";
+  meths.forEach(function(m){ var x=byMethod[m]; pm+='<div class="mini-row"><span>'+esc(m)+' \u00d7'+x.n+'</span><span>'+gbp(x.sum)+'</span></div>'; });
+  document.getElementById("f_breakdown").innerHTML=(months.length?'<h4>Monthly (net)</h4>'+mh:'')+(meths.length?'<h4>Income by payment method</h4>'+pm:'')+(cats.length?'<h4>Expenses by category</h4>'+ch:'');
   var q=(document.getElementById("f_search").value||"").toLowerCase();
   var txns=(finance.txns||[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"");}),html="";
   txns.forEach(function(t){ var hay=((t.description||"")+" "+(t.category||"")+" "+(t.notes||"")+" "+(t.method||"")).toLowerCase(); if(q&&hay.indexOf(q)===-1) return;
