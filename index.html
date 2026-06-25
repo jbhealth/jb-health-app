@@ -925,7 +925,7 @@ function openOverview(){
    Wife is PAYE (her allowance is spent on her wage), so ONE personal allowance applies to
    the partnership profit. Conservative single Class 4 threshold. Pensions not deducted. */
 function openTax(){
-  var PA=12570, IT=0.20, NI4=0.06, NI4T=12570;
+  var PA=12570, IT=0.20, NI4=0.06, NI4T=12570, WIFE_BASE=10000, HR=50270, SL=0.09, SLT=26900;
   function taxYear(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
   var curMo=new Date().toISOString().slice(0,7), curTY=taxYear(curMo);
   var by={};
@@ -934,22 +934,26 @@ function openTax(){
   var months=Object.keys(by).sort(), done=0,sumP=0,toP=0;
   months.forEach(function(mo){ var x=by[mo],p=x.inc-x.exp-x.mil; toP+=p; if(mo<curMo){ done++; sumP+=p; } });
   if(!done){ showModal('<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3><div class="hint">Need at least one completed month in this tax year to project. '+(months.length?'Profit so far: '+gbp(round2(toP))+'.':'No '+curTY+' data yet.')+'</div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); return; }
-  var avgP=sumP/done, pred=avgP*12, taxable=Math.max(0,pred-PA), nibase=Math.max(0,pred-NI4T);
-  var itax=taxable*IT, ni=nibase*NI4, liab=itax+ni;
+  var avgP=sumP/done, pred=avgP*12;
+  var jm=Math.max(0,Math.min(pred-WIFE_BASE,HR)), wf=Math.max(0,pred-jm);
+  var taxable=Math.max(0,pred-PA), itax=taxable*IT;
+  var ni=NI4*(Math.max(0,jm-NI4T)+Math.max(0,wf-NI4T)), sl=SL*Math.max(0,jm-SLT), liab=itax+ni+sl;
   TAX_LIABILITY=round2(liab);
   var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3>'+
     '<div class="hint">Projected from the average of '+done+' completed month'+(done>1?'s':'')+' \u00d7 12. Profit so far this year: '+gbp(round2(toP))+'.</div>'+
     '<div class="fo-wrap"><table class="fo-table">'+
       '<tr><th>'+curTY+'</th><th></th></tr>'+
       '<tr><td>Predicted profit</td><td>'+gbp(round2(pred))+'</td></tr>'+
+      '<tr><td>Split (you / her)</td><td>'+gbp(round2(jm))+' / '+gbp(round2(wf))+'</td></tr>'+
       '<tr><td>Taxable (after \u00a312,570)</td><td>'+gbp(round2(taxable))+'</td></tr>'+
       '<tr><td>Income tax @ 20%</td><td>'+gbp(round2(itax))+'</td></tr>'+
       '<tr><td>Class 4 NI @ 6%</td><td>'+gbp(round2(ni))+'</td></tr>'+
+      '<tr><td>Student loan @ 9%</td><td>'+gbp(round2(sl))+'</td></tr>'+
       '<tr class="fo-avg"><td>Estimated tax for the year</td><td>'+gbp(round2(liab))+'</td></tr>'+
     '</table></div>'+
     '<div class="field"><label>Already owed / payments on account (\u00a3, optional)</label><input type="number" inputmode="decimal" step="any" id="tax_carry" oninput="taxRoll()" placeholder="0.00"></div>'+
     '<div class="fo-proj"><div class="mini-row"><span>Total to set aside</span><span id="tax_total">'+gbp(round2(liab))+'</span></div></div>'+
-    '<div class="hint" style="margin-top:8px">Guesstimate for planning, not a Self Assessment figure. Assumes 2026/27 rates, the partnership share kept inside the basic-rate band, one personal allowance (your wife\u2019s is used by her PAYE wage), and Class 4 NI on profit above \u00a312,570. Pension contributions are not deducted, so the real bill should land a little lower.</div>'+
+    '<div class="hint" style="margin-top:8px">Guesstimate for planning, not a Self Assessment figure. Assumes 2026/27 rates, your wife takes \u00a310,000 of the profit (more if needed to keep your own share under \u00a350,270), one personal allowance (hers is used by her PAYE wage), Class 4 NI charged per person above \u00a312,570 so her \u00a310,000 carries none, and Plan 1 student loan at 9% of your share above \u00a326,900. Pensions are not deducted, so the real bill should land a little lower.</div>'+
     '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>';
   showModal(html);
 }
