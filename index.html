@@ -232,7 +232,7 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 
 <div class="view" id="view-finance">
   <div class="summary" id="f_summary"></div>
-  <div class="actbar"><button class="primary" onclick="openTxn()">+ Transaction</button><button class="ghost" onclick="exportFinance()">Export CSV</button><button class="ghost" onclick="openImportFinance()">Import</button><button class="ghost" onclick="openOverview()">Overview</button></div>
+  <div class="actbar"><button class="primary" onclick="openTxn()">+ Transaction</button><button class="ghost" onclick="exportFinance()">Export CSV</button><button class="ghost" onclick="openImportFinance()">Import</button><button class="ghost" onclick="openOverview()">Overview</button><button class="ghost" onclick="openTax()">Tax</button></div>
   <div class="mini" id="f_breakdown"></div>
   <div class="search-wrap"><input class="search-input" id="f_search" placeholder="Search transactions…" oninput="renderFinance()"></div>
   <div class="list" id="f_list"></div>
@@ -361,7 +361,7 @@ function loadToday(){
 var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Cost of Goods Sold","Advertising & Marketing","Professional Fees","Software & Subscriptions","Bank Charges","Telephone & Internet","Home Office","Training & Courses","Insurance","Repairs & Maintenance","Other Allowable Expenses","Non-allowable (Personal)"];
 var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
 
-var data = {}, mileage = {rate:0.45, trips:[]}, finance = {txns:[]}, ONLINE_NAMES = {};
+var data = {}, mileage = {rate:0.45, trips:[]}, finance = {txns:[]}, ONLINE_NAMES = {}, TAX_LIABILITY = 0;
 var RATES = {};                         /* prefixed-code -> per-session GBP (from private pricing.json) */
 var RATES_MANUAL = [];                   /* prefixed codes handled by hand (free/family) */
 function rateFor(code){ var v = RATES[code]; return (typeof v === "number") ? v : null; }
@@ -919,6 +919,41 @@ function openOverview(){
   html+='<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>';
   showModal(html);
 }
+/* ---- tax estimate ----
+   2026/27 (England). Partnership: split is managed by James to keep both partners inside
+   the basic-rate band, so profit is taxed at 20% + 6% Class 4 NI above the threshold.
+   Wife is PAYE (her allowance is spent on her wage), so ONE personal allowance applies to
+   the partnership profit. Conservative single Class 4 threshold. Pensions not deducted. */
+function openTax(){
+  var PA=12570, IT=0.20, NI4=0.06, NI4T=12570;
+  function taxYear(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
+  var curMo=new Date().toISOString().slice(0,7), curTY=taxYear(curMo);
+  var by={};
+  (finance.txns||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo||taxYear(mo)!==curTY) return; if(!by[mo]) by[mo]={inc:0,exp:0,mil:0}; var a=txnAmount(t); if(t.type==="Income") by[mo].inc+=a; else by[mo].exp+=a; });
+  (mileage.trips||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo||taxYear(mo)!==curTY) return; if(!by[mo]) by[mo]={inc:0,exp:0,mil:0}; by[mo].mil+=tripMiles(t)*mileage.rate; });
+  var months=Object.keys(by).sort(), done=0,sumP=0,toP=0;
+  months.forEach(function(mo){ var x=by[mo],p=x.inc-x.exp-x.mil; toP+=p; if(mo<curMo){ done++; sumP+=p; } });
+  if(!done){ showModal('<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3><div class="hint">Need at least one completed month in this tax year to project. '+(months.length?'Profit so far: '+gbp(round2(toP))+'.':'No '+curTY+' data yet.')+'</div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); return; }
+  var avgP=sumP/done, pred=avgP*12, taxable=Math.max(0,pred-PA), nibase=Math.max(0,pred-NI4T);
+  var itax=taxable*IT, ni=nibase*NI4, liab=itax+ni;
+  TAX_LIABILITY=round2(liab);
+  var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3>'+
+    '<div class="hint">Projected from the average of '+done+' completed month'+(done>1?'s':'')+' \u00d7 12. Profit so far this year: '+gbp(round2(toP))+'.</div>'+
+    '<div class="fo-wrap"><table class="fo-table">'+
+      '<tr><th>'+curTY+'</th><th></th></tr>'+
+      '<tr><td>Predicted profit</td><td>'+gbp(round2(pred))+'</td></tr>'+
+      '<tr><td>Taxable (after \u00a312,570)</td><td>'+gbp(round2(taxable))+'</td></tr>'+
+      '<tr><td>Income tax @ 20%</td><td>'+gbp(round2(itax))+'</td></tr>'+
+      '<tr><td>Class 4 NI @ 6%</td><td>'+gbp(round2(ni))+'</td></tr>'+
+      '<tr class="fo-avg"><td>Estimated tax for the year</td><td>'+gbp(round2(liab))+'</td></tr>'+
+    '</table></div>'+
+    '<div class="field"><label>Already owed / payments on account (\u00a3, optional)</label><input type="number" inputmode="decimal" step="any" id="tax_carry" oninput="taxRoll()" placeholder="0.00"></div>'+
+    '<div class="fo-proj"><div class="mini-row"><span>Total to set aside</span><span id="tax_total">'+gbp(round2(liab))+'</span></div></div>'+
+    '<div class="hint" style="margin-top:8px">Guesstimate for planning, not a Self Assessment figure. Assumes 2026/27 rates, the partnership share kept inside the basic-rate band, one personal allowance (your wife\u2019s is used by her PAYE wage), and Class 4 NI on profit above \u00a312,570. Pension contributions are not deducted, so the real bill should land a little lower.</div>'+
+    '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>';
+  showModal(html);
+}
+function taxRoll(){ var c=round2(parseFloat((document.getElementById("tax_carry")||{}).value))||0, el=document.getElementById("tax_total"); if(el) el.textContent=gbp(round2((TAX_LIABILITY||0)+c)); }
 function renderFinance(){ var income=0,expense=0;
   (finance.txns||[]).forEach(function(t){ var a=txnAmount(t); if(t.type==="Income") income+=a; else expense+=a; });
   var mClaim=0; (mileage.trips||[]).forEach(function(t){ mClaim+=tripMiles(t)*mileage.rate; });
