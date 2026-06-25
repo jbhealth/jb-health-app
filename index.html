@@ -925,7 +925,7 @@ function openOverview(){
    Wife is PAYE (her allowance is spent on her wage), so ONE personal allowance applies to
    the partnership profit. Conservative single Class 4 threshold. Pensions not deducted. */
 function openTax(){
-  var PA=12570, IT=0.20, NI4=0.06, NI4T=12570, WIFE_BASE=12570, HR=50270, SL=0.09, SLT=26900, WAGE=25000, HISPOA=2864.52, HERPOA=1258;
+  var PA=12570, IT=0.20, NI4=0.06, NI4T=12570, WIFE_BASE=12570, HR=50270, SL=0.09, SLT=26900, WAGE=25000, HISPOA=2864.52, HERPOA=1258, PY_POA2=3334.53, PY_BAL=3255.98;
   function taxYear(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
   var curMo=new Date().toISOString().slice(0,7), curTY=taxYear(curMo);
   var by={};
@@ -943,8 +943,8 @@ function openTax(){
   var wtax=IT*Math.max(0,Math.min(WAGE+wf,HR)-Math.max(WAGE,PA))+0.40*Math.max(0,(WAGE+wf)-HR);
   var wni=NI4*Math.max(0,Math.min(wf,HR)-NI4T)+0.02*Math.max(0,wf-HR);
   var wloan=SL*Math.max(0,(WAGE+wf)-SLT);
-  var Ew=wtax+wni+wloan, E=Eh+Ew, poaTot=2*(HISPOA+HERPOA), bal=E-poaTot;
-  var balYr=parseInt(curTY,10)+2;
+  var Ew=wtax+wni+wloan, E=Eh+Ew, poa1=HISPOA+HERPOA, poaTot=2*poa1, bal=E-poaTot;
+  var sY=parseInt(curTY,10), jan1=PY_BAL+poa1;
   var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3>'+
     '<div class="hint">Household view, projected from '+done+' completed month'+(done>1?'s':'')+' \u00d7 12. Profit so far: '+gbp(round2(toP))+'. Her wage assumed \u00a325,000.</div>'+
     '<div class="fo-wrap"><table class="fo-table">'+
@@ -955,12 +955,15 @@ function openTax(){
       '<tr><td>Student loan</td><td>'+gbp(round2(hloan))+'</td><td>'+gbp(round2(wloan))+'</td></tr>'+
       '<tr class="fo-avg"><td>Bill</td><td>'+gbp(round2(Eh))+'</td><td>'+gbp(round2(Ew))+'</td></tr>'+
     '</table></div>'+
-    '<div class="fo-proj">'+
-      '<div class="mini-row"><span>Combined estimated bill</span><span>'+gbp(round2(E))+'</span></div>'+
-      '<div class="mini-row"><span>POAs prepay (you '+gbp(HISPOA)+', her '+gbp(HERPOA)+', \u00d72)</span><span>'+gbp(round2(poaTot))+'</span></div>'+
-      '<div class="mini-row"><span>Balancing, 31 Jan '+balYr+'</span><span>'+gbp(round2(bal))+'</span></div>'+
-    '</div>'+
-    '<div class="hint" style="margin-top:8px">POAs fall due 31 Jan and 31 Jul and cover income tax and Class 4 NI only, so student loans (yours '+gbp(round2(hloan))+', hers '+gbp(round2(wloan))+') are always settled in full with the January balance. Assumes 2026/27 Plan 1 rates, her \u00a325,000 wage and your current split; pensions are not deducted. A planning estimate, not an HMRC figure.</div>'+
+    '<div class="fo-proj"><div class="mini-row"><span>Combined estimated bill ('+curTY+')</span><span>'+gbp(round2(E))+'</span></div></div>'+
+    '<div class="fo-wrap"><table class="fo-table">'+
+      '<tr><th>Payment schedule</th><th></th></tr>'+
+      '<tr><td>31 Jul '+sY+' \u00b7 last year 2nd POA</td><td>'+gbp(round2(PY_POA2))+'</td></tr>'+
+      '<tr><td>31 Jan '+(sY+1)+' \u00b7 last year balance + 1st POA</td><td>'+gbp(round2(jan1))+'</td></tr>'+
+      '<tr><td>31 Jul '+(sY+1)+' \u00b7 2nd POA</td><td>'+gbp(round2(poa1))+'</td></tr>'+
+      '<tr class="fo-avg"><td>31 Jan '+(sY+2)+' \u00b7 this year balance (predicted)</td><td>'+gbp(round2(bal))+'</td></tr>'+
+    '</table></div>'+
+    '<div class="hint" style="margin-top:8px">The first two dates are your filed last-year figures; the final line is this year\u2019s balance from the estimate above, due the following January. POAs cover income tax and Class 4 NI only, so student loans (yours '+gbp(round2(hloan))+', hers '+gbp(round2(wloan))+') are always settled in full with the January balance. Assumes 2026/27 Plan 1 rates, her \u00a325,000 wage and your current split; pensions are not deducted. A planning estimate, not an HMRC figure.</div>'+
     '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>';
   showModal(html);
 }
