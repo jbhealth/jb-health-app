@@ -90,7 +90,8 @@ body{font-family:var(--sans);background:var(--warm);color:var(--dark);min-height
 .mini-row span:last-child{font-weight:600;color:var(--navy);}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;align-items:center;justify-content:center;padding:18px;}
 .modal.show{display:flex;}
-.modal-box{background:#fff;border-radius:14px;padding:20px;width:360px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:88vh;overflow:auto;}
+.modal-box{background:#fff;border-radius:14px;padding:20px;width:360px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:88vh;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 .modal-box h3{font-family:var(--serif);color:var(--navy);font-size:17px;margin-bottom:14px;}
 .field{margin-bottom:12px;}
 .field label{display:block;font-size:11px;color:var(--grey);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;}
@@ -1108,8 +1109,17 @@ function doRestore(){ var txt=document.getElementById("r_text").value.trim(); if
   catch(e){ alert("That code couldn\u2019t be read. Make sure you pasted the whole thing."); } }
 
 /* ---- modal ---- */
-function showModal(html){ document.getElementById("modalBox").innerHTML=html; document.getElementById("modal").classList.add("show"); }
-function closeModal(){ document.getElementById("modal").classList.remove("show"); }
+var _modalScrollY=0;
+function showModal(html){ document.getElementById("modalBox").innerHTML=html;
+  if(!document.body.classList.contains("modal-open")){
+    _modalScrollY=window.scrollY||window.pageYOffset||0;
+    document.body.style.top=(-_modalScrollY)+"px";
+    document.body.classList.add("modal-open");
+  }
+  document.getElementById("modal").classList.add("show"); }
+function closeModal(){ document.getElementById("modal").classList.remove("show");
+  document.body.classList.remove("modal-open"); document.body.style.top="";
+  window.scrollTo(0,_modalScrollY); }
 document.getElementById("modal").addEventListener("click",function(e){ if(e.target.id==="modal") closeModal(); });
 
 
