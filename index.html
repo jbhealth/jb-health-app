@@ -1251,7 +1251,8 @@ function loadMasterIntoFrame(mhtml, code){
   fr.onload=function(){
     try{
       var doc=fr.contentDocument;
-      var st=doc.createElement("style"); st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.trainer-note-input,.session-note-input{overflow:hidden;line-height:1.5;min-height:46px;}"; doc.head.appendChild(st);
+      if(!doc.getElementById("jbAppInjectCSS")){ var st=doc.createElement("style"); st.id="jbAppInjectCSS"; st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.trainer-note-input,.session-note-input{overflow:hidden;line-height:1.5;min-height:46px;}.jb-foot{margin:24px 20px calc(28px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:var(--grey);}.jb-foot a{color:var(--blue);text-decoration:none;font-weight:600;}"; doc.head.appendChild(st); }
+      if(doc.body && !doc.querySelector(".jb-foot")){ var ft=doc.createElement("div"); ft.className="jb-foot"; ft.setAttribute("data-appinject","1"); ft.innerHTML='JB Health \u00b7 <a href="https://jbhealth.co.uk" target="_blank" rel="noopener">jbhealth.co.uk</a>'; doc.body.appendChild(ft); }
       try{ var _grow=function(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; };
         Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ _grow(t); t.addEventListener("input", function(){ _grow(t); }); }); }catch(e){}
       doc.addEventListener("input", function(){ scheduleDraft(code); }, true);
@@ -1264,10 +1265,15 @@ function loadMasterIntoFrame(mhtml, code){
   setSave("ok","Master loaded \u2014 edit, then Push to Git.");
 }
 
+function stripAppInject(doc){ try{
+  var s=doc.getElementById("jbAppInjectCSS"); if(s)s.remove();
+  Array.prototype.forEach.call(doc.querySelectorAll("[data-appinject]"), function(n){ n.remove(); });
+  Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ t.style.removeProperty("height"); });
+}catch(e){} }
 function scheduleDraft(code){ if(_draftTimer) clearTimeout(_draftTimer); _draftTimer=setTimeout(function(){ saveDraft(code); },1500); }
 function saveDraft(code){
   try{ var fr=document.getElementById("progFrame"); fr.contentWindow.bakeForExport();
-    try{ Array.prototype.forEach.call(fr.contentDocument.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ t.style.removeProperty("height"); }); }catch(e){}
+    stripAppInject(fr.contentDocument);
     var h="<!DOCTYPE html>\n"+fr.contentDocument.documentElement.outerHTML;
     if(curMaster && curMaster.baseSig!==undefined && editSig(h)===curMaster.baseSig){
       // no real change vs the loaded master — don't create a phantom draft
@@ -1293,7 +1299,7 @@ async function pushMaster(){
   if(!curMaster) return;
   var fr=document.getElementById("progFrame");
   try{ fr.contentWindow.bakeForExport(); }catch(e){ setSave("warn","Couldn\u2019t read the editor."); return; }
-  try{ Array.prototype.forEach.call(fr.contentDocument.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ t.style.removeProperty("height"); }); }catch(e){}
+  stripAppInject(fr.contentDocument);
   var mhtml="<!DOCTYPE html>\n"+fr.contentDocument.documentElement.outerHTML;
   var cardsNow=(mhtml.match(/class="exercise-card/g)||[]).length;
   if(cardsNow===0 && curMaster.cardsOrig>0){
