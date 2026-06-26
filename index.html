@@ -1223,7 +1223,9 @@ function loadMasterIntoFrame(mhtml, code){
   fr.onload=function(){
     try{
       var doc=fr.contentDocument;
-      var st=doc.createElement("style"); st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}"; doc.head.appendChild(st);
+      var st=doc.createElement("style"); st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.trainer-note-input,.session-note-input{overflow:hidden;line-height:1.5;min-height:46px;}"; doc.head.appendChild(st);
+      try{ var _grow=function(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; };
+        Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ _grow(t); t.addEventListener("input", function(){ _grow(t); }); }); }catch(e){}
       doc.addEventListener("input", function(){ scheduleDraft(code); }, true);
       doc.addEventListener("click", function(){ scheduleDraft(code); }, true);
     }catch(e){}
@@ -1256,6 +1258,7 @@ async function pushMaster(){
   if(!curMaster) return;
   var fr=document.getElementById("progFrame");
   try{ fr.contentWindow.bakeForExport(); }catch(e){ setSave("warn","Couldn\u2019t read the editor."); return; }
+  try{ Array.prototype.forEach.call(fr.contentDocument.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ t.style.removeProperty("height"); }); }catch(e){}
   var mhtml="<!DOCTYPE html>\n"+fr.contentDocument.documentElement.outerHTML;
   var cardsNow=(mhtml.match(/class="exercise-card/g)||[]).length;
   if(cardsNow===0 && curMaster.cardsOrig>0){
