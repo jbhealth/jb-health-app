@@ -376,7 +376,8 @@ function fmt(n){ var r=Math.round((Number(n)||0)*100)/100; return Number.isInteg
 function round2(n){ return Math.round((Number(n)||0)*100)/100; }
 function gbp(n){ return "\u00a3"+(Math.round((Number(n)||0)*100)/100).toFixed(2); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
-function today(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function today(){ return ymd(new Date()); }
 var DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function dayOf(iso){ var d=new Date(iso+"T00:00:00"); return isNaN(d)?"":DOW[d.getDay()]; }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -759,7 +760,7 @@ function exportMileage(){ var rows=[["Date","Day","From","To","From PC","To PC",
 
 /* ---- finance ---- */
 function txnAmount(t){ return round2((Number(t.amountPre)||0)*((Number(t.pct)||0)/100)); }
-function weekStart(ds){ var d=new Date(ds+"T00:00:00"); var day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); return d.toISOString().slice(0,10); }
+function weekStart(ds){ var d=new Date(ds+"T00:00:00"); var day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); return ymd(d); }
 function soChart(labels, vals, curLast){
   if(labels.length<2) return "";
   var W=560,H=170,P={l:34,r:14,t:16,b:26};
@@ -797,9 +798,9 @@ function openSessOverview(){
   if(!weeks.length){ showModal('<h3>Sessions overview</h3><div class="hint">No delivered sessions logged yet.</div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); return; }
   var first=weeks[0], last=weeks[weeks.length-1];
   var allW=[]; var d=new Date(first+"T00:00:00");
-  while(true){ var k=d.toISOString().slice(0,10); allW.push(k); if(k>=last) break; d.setDate(d.getDate()+7); }
+  while(true){ var k=ymd(d); allW.push(k); if(k>=last) break; d.setDate(d.getDate()+7); }
   if(allW.length>16) allW=allW.slice(-16);
-  var curW=weekStart(new Date().toISOString().slice(0,10)), curMo=new Date().toISOString().slice(0,7);
+  var curW=weekStart(today()), curMo=today().slice(0,7);
   var wl=allW.map(function(w){ var p=w.split("-"),M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return (+p[2])+" "+M[(+p[1])-1]; });
   var wv=allW.map(function(w){ return byW[w]||0; });
   var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Sessions overview</h3>'+soChart(wl,wv,allW[allW.length-1]===curW);
@@ -873,7 +874,7 @@ function openOverview(){
   var months=Object.keys(by).sort();
   if(!months.length){ showModal('<h3>Tax year overview</h3><div class="hint">No data yet.</div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); return; }
   function taxYear(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
-  var curMo=new Date().toISOString().slice(0,7), curTY=taxYear(curMo);
+  var curMo=today().slice(0,7), curTY=taxYear(curMo);
   var tys={};
   months.forEach(function(mo){ var ty=taxYear(mo); (tys[ty]=tys[ty]||[]).push(mo); });
   var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax year overview</h3>'+foChart(months,by,curMo);
@@ -928,7 +929,7 @@ function openOverview(){
 function openTax(){
   var PA=12570, IT=0.20, NI4=0.06, NI4T=12570, WIFE_BASE=1900, HR=50270, SL=0.09, SLT=26900, WAGE=25000, HISPOA=4251.62, HERPOA=0, PY_POA2=3334.53, PY_BAL=4030.29, MA=252;
   function taxYear(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
-  var curMo=new Date().toISOString().slice(0,7), curTY=taxYear(curMo);
+  var curMo=today().slice(0,7), curTY=taxYear(curMo);
   var by={};
   (finance.txns||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo||taxYear(mo)!==curTY) return; if(!by[mo]) by[mo]={inc:0,exp:0,mil:0}; var a=txnAmount(t); if(t.type==="Income") by[mo].inc+=a; else by[mo].exp+=a; });
   (mileage.trips||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo||taxYear(mo)!==curTY) return; if(!by[mo]) by[mo]={inc:0,exp:0,mil:0}; by[mo].mil+=tripMiles(t)*mileage.rate; });
