@@ -1137,6 +1137,22 @@ function liveSig(htmlStr){
   return sig.join("~~");
 }
 
+/* Like liveSig but also captures trainer notes + session notes, so a draft can be
+   compared to the GitHub version to tell a REAL edit (notes/reps/exercises changed)
+   from a phantom (just tapped around). Volatile autosize heights are not serialised. */
+function editSig(htmlStr){
+  var d=document.createElement("div"); d.innerHTML=htmlStr; var sig=[];
+  function val(el){ return el ? ((el.value!==undefined && el.value!=="") ? el.value : (el.textContent||"")) : ""; }
+  d.querySelectorAll(".exercise-card").forEach(function(card){
+    var nm=val(card.querySelector(".ex-name-input, .ex-name"));
+    var st=val(card.querySelector(".badge-input, .badge-sets"));
+    var nt=val(card.querySelector(".trainer-note-input"));
+    sig.push(nm.trim()+"|"+st.trim()+"|"+nt.trim());
+  });
+  d.querySelectorAll(".session-note-input").forEach(function(s){ sig.push("S|"+val(s).trim()); });
+  return sig.join("~~");
+}
+
 function renderPrograms(){
   var el=document.getElementById("progStatus"); if(el) el.textContent = progToken()? "Token set \u2713" : "No token";
   var listEl=document.getElementById("prog_list"); if(!listEl) return;
@@ -1205,12 +1221,24 @@ async function openMaster(code){
     if(res.status===401||res.status===403){ setSave("warn","Programs token rejected \u2014 check it."); openProgSettings(); return; }
     if(!res.ok){ setSave("warn","Couldn\u2019t load "+code+" master ("+res.status+")."); return; }
     var j=await res.json();
-    var mhtml=b64ToUtf8(j.content);
-    curMaster={code:code, sha:j.sha, sigOrig:liveSig(mhtml), cardsOrig:(mhtml.match(/class="exercise-card/g)||[]).length};
+    var ghHtml=b64ToUtf8(j.content);
+    curMaster={code:code, sha:j.sha, sigOrig:liveSig(ghHtml), cardsOrig:(ghHtml.match(/class="exercise-card/g)||[]).length, baseSig:editSig(ghHtml)};
+    var mhtml=ghHtml;
     var draft=lsGet("jbh_draft_"+code);
     if(draft){
-      if(confirm("There\u2019s an unsaved local draft for "+code+".\n\nOK = restore your draft\nCancel = use the GitHub version")) mhtml=draft;
-      else lsDel("jbh_draft_"+code);
+      var dbase=lsGet("jbh_draftbase_"+code);
+      if(dbase && dbase!==j.sha){
+        // GitHub has a newer master than this draft was based on — GitHub wins, no prompt
+        lsDel("jbh_draft_"+code); lsDel("jbh_draftbase_"+code);
+        setSave("","Local draft was out of date \u2014 loaded the GitHub version.");
+      } else if(editSig(draft)===curMaster.baseSig){
+        // draft has no real changes vs GitHub — discard silently
+        lsDel("jbh_draft_"+code); lsDel("jbh_draftbase_"+code);
+      } else if(confirm("Restore your unsaved local edits for "+code+"?\n\nOK = keep your edits\nCancel = use the GitHub version")){
+        mhtml=draft;
+      } else {
+        lsDel("jbh_draft_"+code); lsDel("jbh_draftbase_"+code);
+      }
     }
     loadMasterIntoFrame(mhtml, code);
   }catch(e){ setSave("warn","Couldn\u2019t reach GitHub."); }
@@ -1239,8 +1267,15 @@ function loadMasterIntoFrame(mhtml, code){
 function scheduleDraft(code){ if(_draftTimer) clearTimeout(_draftTimer); _draftTimer=setTimeout(function(){ saveDraft(code); },1500); }
 function saveDraft(code){
   try{ var fr=document.getElementById("progFrame"); fr.contentWindow.bakeForExport();
+    try{ Array.prototype.forEach.call(fr.contentDocument.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ t.style.removeProperty("height"); }); }catch(e){}
     var h="<!DOCTYPE html>\n"+fr.contentDocument.documentElement.outerHTML;
-    lsSet("jbh_draft_"+code,h); setSave("","Draft saved on device \u2713");
+    if(curMaster && curMaster.baseSig!==undefined && editSig(h)===curMaster.baseSig){
+      // no real change vs the loaded master — don't create a phantom draft
+      lsDel("jbh_draft_"+code); lsDel("jbh_draftbase_"+code); return;
+    }
+    lsSet("jbh_draft_"+code,h);
+    if(curMaster) lsSet("jbh_draftbase_"+code,curMaster.sha);
+    setSave("","Draft saved on device \u2713");
   }catch(e){}
 }
 
@@ -1251,7 +1286,7 @@ function saveMasterNow(btn){
 }
 function pullMaster(){ if(!curMaster) return;
   if(!confirm("Pull the latest from GitHub? This discards any on-screen edits you haven\u2019t pushed.")) return;
-  lsDel("jbh_draft_"+curMaster.code); openMaster(curMaster.code);
+  lsDel("jbh_draft_"+curMaster.code); lsDel("jbh_draftbase_"+curMaster.code); openMaster(curMaster.code);
 }
 
 async function pushMaster(){
@@ -1281,8 +1316,8 @@ async function pushMaster(){
     var res=await fetch(masterApi(curMaster.code), {method:"PUT", headers:Object.assign({"Content-Type":"application/json"}, progHeaders()), body:JSON.stringify(payload)});
     if(res.status===401||res.status===403){ setSave("warn","Token rejected on push \u2014 check it."); return; }
     if(!res.ok){ setSave("warn","Push failed ("+res.status+")."); return; }
-    var j=await res.json(); curMaster.sha=j.content.sha;
-    lsDel("jbh_draft_"+curMaster.code);
+    var j=await res.json(); curMaster.sha=j.content.sha; curMaster.baseSig=editSig(mhtml);
+    lsDel("jbh_draft_"+curMaster.code); lsDel("jbh_draftbase_"+curMaster.code);
     var changed = liveSig(mhtml)!==curMaster.sigOrig; curMaster.sigOrig=liveSig(mhtml);
     setSave("ok","Pushed "+curMaster.code+" \u2713");
     alert(changed
