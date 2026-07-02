@@ -360,7 +360,7 @@ function loadToday(){
   }catch(e){ TODAY_ORDER=null; }
 }
 var CATEGORIES = ["Sales / Revenue","Office Costs","Travel","Motor Expenses","Cost of Goods Sold","Advertising & Marketing","Professional Fees","Software & Subscriptions","Bank Charges","Telephone & Internet","Home Office","Training & Courses","Insurance","Repairs & Maintenance","Other Allowable Expenses","Non-allowable (Personal)"];
-var METHODS = ["BACS","Bank transfer","Cash","Card","Direct Debit","Standing Order","Other"];
+var METHODS = ["BACS","Cash","Card","Direct Debit","Standing Order","Other"];
 
 var data = {}, mileage = {rate:0.45, trips:[]}, finance = {txns:[]}, ONLINE_NAMES = {}, TAX_LIABILITY = 0;
 var RATES = {};                         /* prefixed-code -> per-session GBP (from private pricing.json) */
@@ -618,7 +618,7 @@ function openPay(code,name){ var fc=financeCode(code), r=rateFor(fc);
   var note = (r!==null&&r>0) ? ('Will add a finance line: <b>'+fc+'</b> at £'+r+'/session.') : 'No rate set — records the payment only, no finance line.';
   showModal('<h3>Payment — '+esc(name)+'</h3>'+
   '<div class="field"><label>Sessions paid for</label><input type="number" inputmode="decimal" step="any" id="m_sessions" value="1" min="0" oninput="payPreview(\''+code+'\')"></div>'+
-  '<div class="field"><label>Method</label><select id="m_method"><option>Bank transfer</option><option>Cash</option><option>Friends/Family</option></select></div>'+
+  '<div class="field"><label>Method</label><select id="m_method"><option>BACS</option><option>Cash</option><option>Friends/Family</option></select></div>'+
   '<div class="field"><label>Date</label><input type="date" id="m_date" value="'+today()+'"></div>'+
   '<div class="hint" id="m_preview">'+note+'</div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="savePay(\''+code+'\')">Save</button></div>');
@@ -659,12 +659,12 @@ function openQuickLog(){ showModal('<h3>Log today</h3>'+
   '<div class="hint"><b>Out</b> = clients seen (comma-separated initials), each \u22121 — add a number for part/extra ("AC 1.5"). <b>In</b> = payments, one per line: <code>INITIALS sessions method</code>. Unknown codes are skipped.</div>'+
   '<div class="field"><label>Date</label><input type="date" id="ql_date" value="'+today()+'" oninput="qlPreview()"></div>'+
   '<div class="field"><label>Sessions done (out)</label><input id="ql_out" placeholder="AC, CP, EL" oninput="qlPreview()"></div>'+
-  '<div class="field"><label>Payments (in)</label><textarea id="ql_in" placeholder="CP 2 Bank transfer&#10;RC 8 Cash" oninput="qlPreview()"></textarea></div>'+
+  '<div class="field"><label>Payments (in)</label><textarea id="ql_in" placeholder="CP 2 BACS&#10;RC 8 Cash" oninput="qlPreview()"></textarea></div>'+
   '<div id="ql_preview" class="hint"></div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="applyQuickLog()">Apply</button></div>'); qlPreview(); }
 function parseQuickLog(){ var outRaw=(document.getElementById("ql_out").value||""),inRaw=(document.getElementById("ql_in").value||""),outs=[],ins=[],unknown=[];
   outRaw.split(",").forEach(function(tok){ tok=tok.trim(); if(!tok) return; var m=tok.split(/\s+/),code=m[0].toUpperCase(),n=m.length>1?round2(parseFloat(m[1])):1; if(!n||n<=0)n=1; if(!data[code]){unknown.push(code);return;} outs.push({code:code,sessions:n}); });
-  inRaw.split(/[\n,]/).forEach(function(tok){ tok=tok.trim(); if(!tok) return; var m=tok.split(/\s+/),code=m[0].toUpperCase(),n=m.length>1?round2(parseFloat(m[1])):1; if(!n||n<=0)n=1; var method=m.slice(2).join(" ")||"Bank transfer"; if(!data[code]){unknown.push(code);return;} ins.push({code:code,sessions:n,method:method}); });
+  inRaw.split(/[\n,]/).forEach(function(tok){ tok=tok.trim(); if(!tok) return; var m=tok.split(/\s+/),code=m[0].toUpperCase(),n=m.length>1?round2(parseFloat(m[1])):1; if(!n||n<=0)n=1; var method=m.slice(2).join(" ")||"BACS"; if(!data[code]){unknown.push(code);return;} ins.push({code:code,sessions:n,method:method}); });
   return {outs:outs,ins:ins,unknown:unknown}; }
 function qlPreview(){ var p=parseQuickLog(),el=document.getElementById("ql_preview"); if(!el) return; var bits=[];
   if(p.outs.length) bits.push('<b>'+p.outs.length+' out:</b> '+p.outs.map(function(o){return data[o.code].name+' \u2212'+fmt(o.sessions);}).join(", "));
