@@ -1460,7 +1460,8 @@ async function refreshBadge(){ if(!adminTok()){ osBadge(0); return; } try{ var i
 /* badge on open, then keep it fresh while the app is open (background updates need Web Push) */
 setTimeout(function(){ requestNotifPerm(); refreshBadge(); }, 1500);
 setInterval(function(){ if(document.visibilityState==="visible") refreshBadge(); }, 60000);
-document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible") refreshBadge(); });
+document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); } else { osBadge(_pending.length); } });
+window.addEventListener("pagehide", function(){ osBadge(_pending.length); });
 
 /* ── System map tab ── */
 var mapLoaded = false;
