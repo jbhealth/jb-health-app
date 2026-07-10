@@ -217,7 +217,7 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 <div class="savebar"><span class="dot off" id="syncdot"></span><span id="savestate">Starting…</span></div>
 
 <div class="view" id="view-sessions">
-  <div class="actbar"><button class="primary" onclick="openQuickLog()">Log today</button><button class="ghost" onclick="openAdd()">+ Client</button><button class="ghost" onclick="openSessOverview()">Overview</button></div>
+  <div class="actbar"><button class="primary" onclick="openQuickLog()">Log today</button><button class="ghost" onclick="openAdd()">+ Client</button><button class="ghost" onclick="openSessOverview()">Overview</button><button class="ghost" onclick="openBalanceSweep()">Push balances</button></div>
   <div class="summary" id="summary"></div>
   <div class="search-wrap"><input class="search-input" id="search" placeholder="Search client…" oninput="render()"></div>
   <div class="list" id="list"></div>
@@ -450,6 +450,133 @@ async function flushPills(){
   var codes=Object.keys(pillDirty); pillDirty={};
   for(var i=0;i<codes.length;i++){ await pushPill(codes[i]); }
 }
+
+/* ---- Balance sweep: full reconcile across ALL clients, one batched commit ----
+   Mirrors build_balances.py: in minus out per client, dependents (payer_pairs)
+   get no pill and any stale dependent file is deleted, and every change ships as
+   ONE commit via the Git Data API so a full sweep is a single Pages build. This
+   is the reconciling counterpart to the incremental per-edit flushPills(). */
+var SWEEP_PLAN = null;
+
+async function sweepDependents(){
+  /* Authoritative dependents = keys of payer_pairs in pricing.json (bare codes). */
+  try{
+    var url="https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/pricing.json?ref="+encodeURIComponent(cfg.branch);
+    var res=await fetch(url,{headers:ghHeaders()});
+    if(res.ok){
+      var j=await res.json(), p=JSON.parse(b64ToUtf8(j.content));
+      var pp=p.payer_pairs||{}, set={};
+      Object.keys(pp).forEach(function(k){ set[k.replace(/^(JB_|OL_)/,"")]=true; });
+      return {set:set, ok:true};
+    }
+  }catch(e){}
+  var fb={}; (typeof FO_PAIRS!=="undefined"?FO_PAIRS:[]).forEach(function(pr){ if(pr[1]) fb[pr[1]]=true; });
+  return {set:fb, ok:false};
+}
+
+async function sweepPillMap(){
+  /* Current pill values keyed by session code, from programs/balances/. */
+  var map={}, shas={};
+  try{
+    var dirUrl="https://api.github.com/repos/"+cfg.owner+"/programs/contents/balances?ref=main";
+    var res=await fetch(dirUrl,{headers:ghHeaders()});
+    if(!res.ok) return {map:map,shas:shas};
+    var files=await res.json();
+    var jobs=files.filter(function(f){return /^JB_.+\.json$/.test(f.name);}).map(async function(f){
+      var code=f.name.replace(/^JB_/,"").replace(/\.json$/,"");
+      shas[code]=f.sha;
+      try{
+        var r=await fetch("https://api.github.com/repos/"+cfg.owner+"/programs/contents/balances/"+encodeURIComponent(f.name)+"?ref=main",{headers:ghHeaders()});
+        if(r.ok){ var jj=await r.json(); var v=JSON.parse(b64ToUtf8(jj.content)); map[code]=(v&&typeof v.b==="number")?v.b:null; }
+      }catch(e){}
+    });
+    await Promise.all(jobs);
+  }catch(e){}
+  return {map:map,shas:shas};
+}
+
+async function openBalanceSweep(){
+  if(!ghConfigured()){ setSave("warn","Set the GitHub token first (Sync)."); return; }
+  showModal('<h3>Push balances</h3><div class="hint">Reading current pills\u2026</div>');
+  var behind=false;
+  try{
+    var dr=await fetch(apiUrl()+"?ref="+encodeURIComponent(cfg.branch),{headers:ghHeaders()});
+    if(dr.ok){ var dj=await dr.json(); if(dj.sha && lsGet("jbh_sha") && dj.sha!==lsGet("jbh_sha")) behind=true; }
+  }catch(e){}
+  var dep=await sweepDependents();
+  var cur=await sweepPillMap();
+  var codes={}; Object.keys(data).forEach(function(c){codes[c]=true;}); Object.keys(dep.set).forEach(function(c){codes[c]=true;});
+  var plan=[];
+  Object.keys(codes).sort().forEach(function(code){
+    var path="balances/JB_"+code+".json";
+    var exists=(code in cur.map)||(code in cur.shas);
+    if(dep.set[code]){ if(exists) plan.push({code:code,act:"delete",path:path,sha:cur.shas[code]}); return; }
+    var nb=balance(code), ob=cur.map[code];
+    if(!exists) plan.push({code:code,act:"create",val:nb,path:path});
+    else if(ob!==nb) plan.push({code:code,act:"update",val:nb,old:ob,path:path});
+    else plan.push({code:code,act:"same",val:nb});
+  });
+  var changes=plan.filter(function(p){return p.act!=="same";});
+  SWEEP_PLAN=changes;
+  var rows=changes.map(function(p){
+    if(p.act==="delete") return '<div style="padding:3px 0"><b>'+esc(p.code)+'</b> <span style="color:#c0392b">delete pill</span></div>';
+    if(p.act==="create") return '<div style="padding:3px 0"><b>'+esc(p.code)+'</b> <span style="color:#2E86C1">new '+fmt(p.val)+'</span></div>';
+    return '<div style="padding:3px 0"><b>'+esc(p.code)+'</b> <span style="opacity:.6">'+fmt(p.old==null?0:p.old)+' \u2192</span> '+fmt(p.val)+'</div>';
+  }).join("");
+  var nUnch=plan.length-changes.length;
+  var warn = behind ? '<div class="hint" style="color:#b8860b">Phone may be behind \u2014 remote data has moved since your last sync. Pull first for an accurate sweep.</div>' : '';
+  var depWarn = dep.ok ? '' : '<div class="hint" style="color:#b8860b">Couldn\u2019t load payer pairs \u2014 using the built-in fallback for dependent suppression.</div>';
+  if(!changes.length){
+    showModal('<h3>Push balances</h3>'+warn+depWarn+'<div class="hint">All balances current \u2014 '+nUnch+' pill(s) already match. Nothing to push.</div><div class="modal-btns"><button class="mb-save" onclick="closeModal()">Close</button></div>');
+    return;
+  }
+  var nUp=changes.filter(function(p){return p.act!=="delete";}).length, nDel=changes.filter(function(p){return p.act==="delete";}).length;
+  showModal('<h3>Push balances</h3>'+warn+depWarn+
+    '<div class="hint">'+nUp+' to write, '+nDel+' to delete, '+nUnch+' unchanged. One commit, one Pages build.</div>'+
+    '<div style="max-height:38vh;overflow:auto;margin:10px 0;font-size:14px;line-height:1.5">'+rows+'</div>'+
+    (behind?'<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-cancel" onclick="pullThenSweep()">Pull first</button><button class="mb-save" onclick="runBalanceSweep()">Push anyway</button></div>'
+           :'<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="runBalanceSweep()">Confirm &amp; push</button></div>'));
+}
+
+async function pullThenSweep(){ closeModal(); await pullFromGitHub(true); render(); openBalanceSweep(); }
+
+async function runBalanceSweep(){
+  var changes=SWEEP_PLAN||[];
+  if(!changes.length){ closeModal(); return; }
+  showModal('<h3>Push balances</h3><div class="hint">Pushing one commit\u2026</div>');
+  var base="https://api.github.com/repos/"+cfg.owner+"/programs/git/";
+  try{
+    var rref=await fetch(base+"ref/heads/main",{headers:ghHeaders()});
+    if(!rref.ok) throw new Error("ref read "+rref.status);
+    var jref=await rref.json(), headSha=jref.object.sha;
+    var rc=await fetch(base+"commits/"+headSha,{headers:ghHeaders()});
+    if(!rc.ok) throw new Error("commit read "+rc.status);
+    var jc=await rc.json(), baseTree=jc.tree.sha;
+    var tree=changes.map(function(p){
+      if(p.act==="delete") return {path:p.path,mode:"100644",type:"blob",sha:null};
+      return {path:p.path,mode:"100644",type:"blob",content:JSON.stringify({b:p.val})};
+    });
+    var rt=await fetch(base+"trees",{method:"POST",headers:ghHeaders(),body:JSON.stringify({base_tree:baseTree,tree:tree})});
+    if(!rt.ok) throw new Error("tree "+rt.status);
+    var jt=await rt.json();
+    var nUp=changes.filter(function(p){return p.act!=="delete";}).length, nDel=changes.filter(function(p){return p.act==="delete";}).length;
+    var parts=[]; if(nUp)parts.push(nUp+" update(s)"); if(nDel)parts.push(nDel+" delete(s)");
+    var msg="Balance sweep: "+parts.join(", ");
+    var rcm=await fetch(base+"commits",{method:"POST",headers:ghHeaders(),body:JSON.stringify({message:msg,tree:jt.sha,parents:[headSha]})});
+    if(!rcm.ok) throw new Error("commit "+rcm.status);
+    var jcm=await rcm.json();
+    var rp=await fetch(base+"refs/heads/main",{method:"PATCH",headers:ghHeaders(),body:JSON.stringify({sha:jcm.sha})});
+    if(!rp.ok) throw new Error("ref "+rp.status);
+    changes.forEach(function(p){ delete pillDirty[p.code]; });
+    SWEEP_PLAN=null;
+    showModal('<h3>Balances pushed</h3><div class="hint">Commit '+esc(jcm.sha.slice(0,8))+' \u2014 '+msg+'. One Pages build triggered.</div><div class="modal-btns"><button class="mb-save" onclick="closeModal()">Done</button></div>');
+    setSave("ok","Balances pushed \u2713");
+  }catch(e){
+    showModal('<h3>Push failed</h3><div class="hint">'+esc(String(e.message||e))+'. If it failed before the commit step, nothing changed on GitHub \u2014 your device data is safe. Try again, or use the script.</div><div class="modal-btns"><button class="mb-save" onclick="closeModal()">Close</button></div>');
+    setSave("warn","Balance push failed \u2014 see dialog.");
+  }
+}
+
 async function pushToGitHub(){
   if(!ghConfigured()) return;
   if(syncing){ pushTimer=setTimeout(pushToGitHub,800); return; }
