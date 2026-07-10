@@ -585,7 +585,7 @@ async function pushToGitHub(){
     var body={ message:"JB Health update "+new Date().toISOString(), content:utf8ToB64(JSON.stringify(bundle())), branch:cfg.branch };
     var sha=lsGet("jbh_sha"); if(sha) body.sha=sha;
     var res=await fetch(apiUrl(), {method:"PUT", headers:ghHeaders(), body:JSON.stringify(body)});
-    if(res.status===409||res.status===422){ syncing=false; return handleConflict(); }
+    if(res.status===409||res.status===422){ syncing=false; if(pushTimer){clearTimeout(pushTimer);pushTimer=null;} return handleConflict(); }
     if(res.status===401||res.status===403){ setSave("warn","GitHub rejected the token — open Sync to fix."); syncing=false; return; }
     if(!res.ok){ setSave("warn","Sync failed ("+res.status+") — saved on device."); syncing=false; return; }
     var j=await res.json(); if(j&&j.content&&j.content.sha) lsSet("jbh_sha", j.content.sha);
@@ -634,11 +634,37 @@ async function handleConflict(){
         '<button class="mb-save" onclick="resolveConflict(\'local\')">Keep this device</button></div>');
   }catch(e){ setSave("warn","Sync conflict — saved on device."); }
 }
-function resolveConflict(which){
+async function resolveConflict(which){
   closeModal();
-  if(which==="remote"){ applyBundle(window._remoteConflict); cacheLocal(); renderAll(); setSave("ok","Took GitHub copy \u2713"); }
-  else { setSave("","Re-syncing this device\u2026"); pushToGitHub(); }
   window._remoteConflict=null;
+  if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; }
+  if(which==="remote"){
+    var ok=await pullFromGitHub(true);
+    setSave(ok?"ok":"warn", ok?"Took GitHub copy ✓":"Couldn’t read remote — saved on device.");
+    return;
+  }
+  /* Keep this device: overwrite remote with local, using a FRESH sha fetched right
+     before the write. Retry once on a genuine race, then stop with a message rather
+     than re-opening the modal, so a leftover second instance can't loop us forever. */
+  setSave("","Re-syncing this device…");
+  syncing=true;
+  try{
+    var done=false;
+    for(var attempt=0; attempt<2 && !done; attempt++){
+      var head=await fetch(apiUrl()+"?ref="+encodeURIComponent(cfg.branch),{headers:ghHeaders()});
+      var sha=null; if(head.ok){ var hj=await head.json(); sha=hj.sha; }
+      var body={ message:"JB Health update "+new Date().toISOString(), content:utf8ToB64(JSON.stringify(bundle())), branch:cfg.branch };
+      if(sha) body.sha=sha;
+      var res=await fetch(apiUrl(),{method:"PUT",headers:ghHeaders(),body:JSON.stringify(body)});
+      if(res.status===409||res.status===422){ continue; }
+      if(!res.ok){ setSave("warn","Sync failed ("+res.status+") — saved on device."); done=true; break; }
+      var j=await res.json(); if(j&&j.content&&j.content.sha) lsSet("jbh_sha",j.content.sha);
+      lsSet("jbh_lastsync",String(Date.now())); setSave("ok","This device kept — synced ✓");
+      done=true; flushPills();
+    }
+    if(!done){ setSave("warn","Another device is still writing — close any other open copy, then try again."); }
+  }catch(e){ setSave("warn","Offline — saved on device, will sync next change."); }
+  syncing=false;
 }
 
 function openSync(){
