@@ -221,7 +221,7 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
   <div class="summary" id="summary"></div>
   <div class="search-wrap"><input class="search-input" id="search" placeholder="Search client…" oninput="render()"></div>
   <div class="list" id="list"></div>
-  <div class="note">Balance = sessions paid in minus sessions delivered. Green = in credit, red = owes you. Part-sessions are fine (e.g. 1.75). Changes save to this device instantly and sync to GitHub when connected.</div>
+  <div class="note">Balance = sessions paid in minus sessions delivered. Green = in credit, red = owes you. Part-sessions are fine (e.g. 1.75). Changes save to this device instantly and sync to GitHub when connected. Client-page balance pills update when you tap <strong>Push balances</strong>.</div>
 </div>
 
 <div class="view" id="view-mileage">
@@ -435,6 +435,7 @@ function save(){ persist(); } function saveM(){ persist(); } function saveF(){ p
 var pillDirty = {};                         /* session keys whose balance pill needs rewriting */
 function markPill(code){ if(code) pillDirty[code]=true; }
 function pillFile(code){ return "JB_"+code+".json"; }   /* literal key: in-person JB_KB.json; online JB_OL_AB.json */
+/* Legacy single-pill pusher \u2014 no longer called (see flushPills note). */
 async function pushPill(code){
   if(!ghConfigured()||sweepBusy) return;
   var path="balances/"+pillFile(code);
@@ -446,11 +447,10 @@ async function pushPill(code){
     await fetch(url,{method:"PUT",headers:ghHeaders(),body:JSON.stringify(body)});
   }catch(e){ /* best-effort: device + data sync already hold the truth */ }
 }
-async function flushPills(){
-  if(sweepBusy) return;                       /* a batched sweep owns the branch; don’t race it */
-  var codes=Object.keys(pillDirty); pillDirty={};
-  for(var i=0;i<codes.length;i++){ await pushPill(codes[i]); }
-}
+/* Per-edit pill push retired 10 Jul 2026: balance pills now move ONLY through the
+   previewed, batched "Push balances" sweep (runBalanceSweep), so an on-page pill
+   never changes without the diff being seen first. Inert no-op, kept defensively. */
+async function flushPills(){ return; }
 
 /* ---- Balance sweep: full reconcile across ALL clients, one batched commit ----
    Mirrors build_balances.py: in minus out per client, dependents (payer_pairs)
@@ -604,7 +604,6 @@ async function pushToGitHub(){
     if(!res.ok){ setSave("warn","Sync failed ("+res.status+") — saved on device."); syncing=false; return; }
     var j=await res.json(); if(j&&j.content&&j.content.sha) lsSet("jbh_sha", j.content.sha);
     lsSet("jbh_lastsync", String(Date.now())); setSave("ok","Synced to GitHub \u2713");
-    flushPills();
   }catch(e){ setSave("warn","Offline — saved on device, will sync next change."); }
   syncing=false;
 }
@@ -694,7 +693,7 @@ async function resolveConflict(which){
       if(!res.ok){ setSave("warn","Sync failed ("+res.status+") — saved on device."); done=true; break; }
       var j=await res.json(); if(j&&j.content&&j.content.sha) lsSet("jbh_sha",j.content.sha);
       lsSet("jbh_lastsync",String(Date.now())); setSave("ok","This device kept — synced ✓");
-      done=true; flushPills();
+      done=true;
     }
     if(!done){ setSave("warn","Another device is still writing — close any other open copy, then try again."); }
   }catch(e){ setSave("warn","Offline — saved on device, will sync next change."); }
