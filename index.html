@@ -633,6 +633,26 @@ async function pullFromGitHub(silent){
     return true;
   }catch(e){ setSave("warn","Couldn\u2019t reach GitHub — using device copy."); return false; }
 }
+async function foregroundRefresh(){
+  /* Returning to the app: if the server has moved on AND we have nothing pending
+     locally, adopt the latest silently. Skips when a push is queued or in flight,
+     or a dialog is open, so it can never clobber an unsaved edit or a live preview. */
+  if(!ghConfigured()) return;
+  if(syncing || pushTimer || sweepBusy) return;
+  var mv=document.getElementById("modal");
+  if(mv && getComputedStyle(mv).display!=="none") return;
+  try{
+    var res=await fetch(apiUrl()+"?ref="+encodeURIComponent(cfg.branch),{headers:ghHeaders()});
+    if(!res.ok) return;
+    var j=await res.json();
+    if(j.sha===lsGet("jbh_sha")) return;          /* already current */
+    lsSet("jbh_sha", j.sha);
+    applyBundle(JSON.parse(b64ToUtf8(j.content))); cacheLocal(); renderAll();
+    pullPricing();
+    setSave("ok","Refreshed from GitHub \u2713");
+  }catch(e){ /* offline: keep the device copy, no message */ }
+}
+
 async function handleConflict(){
   try{
     var res=await fetch(apiUrl()+"?ref="+encodeURIComponent(cfg.branch), {headers:ghHeaders()});
@@ -1627,7 +1647,7 @@ async function refreshBadge(){ if(!adminTok()){ osBadge(0); return; } try{ var i
 /* badge on open, then keep it fresh while the app is open (background updates need Web Push) */
 setTimeout(function(){ requestNotifPerm(); refreshBadge(); }, 1500);
 setInterval(function(){ if(document.visibilityState==="visible") refreshBadge(); }, 60000);
-document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); } else { osBadge(_pending.length); } });
+document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); foregroundRefresh(); } else { osBadge(_pending.length); } });
 window.addEventListener("pagehide", function(){ osBadge(_pending.length); });
 
 /* ── System map tab ── */
