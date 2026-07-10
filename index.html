@@ -436,7 +436,7 @@ var pillDirty = {};                         /* session keys whose balance pill n
 function markPill(code){ if(code) pillDirty[code]=true; }
 function pillFile(code){ return "JB_"+code+".json"; }   /* literal key: in-person JB_KB.json; online JB_OL_AB.json */
 async function pushPill(code){
-  if(!ghConfigured()) return;
+  if(!ghConfigured()||sweepBusy) return;
   var path="balances/"+pillFile(code);
   var url="https://api.github.com/repos/"+cfg.owner+"/programs/contents/"+path;
   var body={ message:"Balance pill "+pillFile(code), content:utf8ToB64(JSON.stringify({b:balance(code)})), branch:"main" };
@@ -447,6 +447,7 @@ async function pushPill(code){
   }catch(e){ /* best-effort: device + data sync already hold the truth */ }
 }
 async function flushPills(){
+  if(sweepBusy) return;                       /* a batched sweep owns the branch; don’t race it */
   var codes=Object.keys(pillDirty); pillDirty={};
   for(var i=0;i<codes.length;i++){ await pushPill(codes[i]); }
 }
@@ -456,7 +457,7 @@ async function flushPills(){
    get no pill and any stale dependent file is deleted, and every change ships as
    ONE commit via the Git Data API so a full sweep is a single Pages build. This
    is the reconciling counterpart to the incremental per-edit flushPills(). */
-var SWEEP_PLAN = null;
+var SWEEP_PLAN = null, sweepBusy = false;
 
 async function sweepDependents(){
   /* Authoritative dependents = keys of payer_pairs in pricing.json (bare codes). */
@@ -545,34 +546,47 @@ async function runBalanceSweep(){
   if(!changes.length){ closeModal(); return; }
   showModal('<h3>Push balances</h3><div class="hint">Pushing one commit\u2026</div>');
   var base="https://api.github.com/repos/"+cfg.owner+"/programs/git/";
+  var nUp=changes.filter(function(p){return p.act!=="delete";}).length, nDel=changes.filter(function(p){return p.act==="delete";}).length;
+  var parts=[]; if(nUp)parts.push(nUp+" update(s)"); if(nDel)parts.push(nDel+" delete(s)");
+  var msg="Balance sweep: "+parts.join(", ");
+  var tree=changes.map(function(p){
+    if(p.act==="delete") return {path:p.path,mode:"100644",type:"blob",sha:null};
+    return {path:p.path,mode:"100644",type:"blob",content:JSON.stringify({b:p.val})};
+  });
+  /* One commit via the Git Data API. The final ref update 422s if the branch tip
+     moved since we read it (another writer landed). Re-read head and rebuild on a
+     fresh base, up to a few attempts, so a transient race just retries and wins. */
+  sweepBusy=true;
+  var ok=false, lastErr="", commitSha="";
   try{
-    var rref=await fetch(base+"ref/heads/main",{headers:ghHeaders()});
-    if(!rref.ok) throw new Error("ref read "+rref.status);
-    var jref=await rref.json(), headSha=jref.object.sha;
-    var rc=await fetch(base+"commits/"+headSha,{headers:ghHeaders()});
-    if(!rc.ok) throw new Error("commit read "+rc.status);
-    var jc=await rc.json(), baseTree=jc.tree.sha;
-    var tree=changes.map(function(p){
-      if(p.act==="delete") return {path:p.path,mode:"100644",type:"blob",sha:null};
-      return {path:p.path,mode:"100644",type:"blob",content:JSON.stringify({b:p.val})};
-    });
-    var rt=await fetch(base+"trees",{method:"POST",headers:ghHeaders(),body:JSON.stringify({base_tree:baseTree,tree:tree})});
-    if(!rt.ok) throw new Error("tree "+rt.status);
-    var jt=await rt.json();
-    var nUp=changes.filter(function(p){return p.act!=="delete";}).length, nDel=changes.filter(function(p){return p.act==="delete";}).length;
-    var parts=[]; if(nUp)parts.push(nUp+" update(s)"); if(nDel)parts.push(nDel+" delete(s)");
-    var msg="Balance sweep: "+parts.join(", ");
-    var rcm=await fetch(base+"commits",{method:"POST",headers:ghHeaders(),body:JSON.stringify({message:msg,tree:jt.sha,parents:[headSha]})});
-    if(!rcm.ok) throw new Error("commit "+rcm.status);
-    var jcm=await rcm.json();
-    var rp=await fetch(base+"refs/heads/main",{method:"PATCH",headers:ghHeaders(),body:JSON.stringify({sha:jcm.sha})});
-    if(!rp.ok) throw new Error("ref "+rp.status);
+    for(var attempt=0; attempt<5 && !ok; attempt++){
+      if(attempt) await new Promise(function(r){ setTimeout(r,400); });
+      try{
+        var rref=await fetch(base+"ref/heads/main",{headers:ghHeaders()});
+        if(!rref.ok){ lastErr="ref read "+rref.status; continue; }
+        var headSha=(await rref.json()).object.sha;
+        var rc=await fetch(base+"commits/"+headSha,{headers:ghHeaders()});
+        if(!rc.ok){ lastErr="commit read "+rc.status; continue; }
+        var baseTree=(await rc.json()).tree.sha;
+        var rt=await fetch(base+"trees",{method:"POST",headers:ghHeaders(),body:JSON.stringify({base_tree:baseTree,tree:tree})});
+        if(!rt.ok){ lastErr="tree "+rt.status; continue; }
+        var treeSha=(await rt.json()).sha;
+        var rcm=await fetch(base+"commits",{method:"POST",headers:ghHeaders(),body:JSON.stringify({message:msg,tree:treeSha,parents:[headSha]})});
+        if(!rcm.ok){ lastErr="commit "+rcm.status; continue; }
+        commitSha=(await rcm.json()).sha;
+        var rp=await fetch(base+"refs/heads/main",{method:"PATCH",headers:ghHeaders(),body:JSON.stringify({sha:commitSha})});
+        if(rp.ok){ ok=true; break; }
+        lastErr="ref "+rp.status;
+      }catch(e){ lastErr=String(e.message||e); }
+    }
+  }finally{ sweepBusy=false; }
+  if(ok){
     changes.forEach(function(p){ delete pillDirty[p.code]; });
     SWEEP_PLAN=null;
-    showModal('<h3>Balances pushed</h3><div class="hint">Commit '+esc(jcm.sha.slice(0,8))+' \u2014 '+msg+'. One Pages build triggered.</div><div class="modal-btns"><button class="mb-save" onclick="closeModal()">Done</button></div>');
+    showModal('<h3>Balances pushed</h3><div class="hint">Commit '+esc(commitSha.slice(0,8))+' \u2014 '+msg+'. One Pages build triggered.</div><div class="modal-btns"><button class="mb-save" onclick="closeModal()">Done</button></div>');
     setSave("ok","Balances pushed \u2713");
-  }catch(e){
-    showModal('<h3>Push failed</h3><div class="hint">'+esc(String(e.message||e))+'. If it failed before the commit step, nothing changed on GitHub \u2014 your device data is safe. Try again, or use the script.</div><div class="modal-btns"><button class="mb-save" onclick="closeModal()">Close</button></div>');
+  }else{
+    showModal('<h3>Push failed</h3><div class="hint">'+esc(lastErr)+' after retries. Nothing partial is left on GitHub \u2014 your device data is safe. If it keeps failing, close any other open copy of the app (it may be writing at the same time), then try again.</div><div class="modal-btns"><button class="mb-save" onclick="closeModal()">Close</button></div>');
     setSave("warn","Balance push failed \u2014 see dialog.");
   }
 }
