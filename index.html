@@ -1590,12 +1590,17 @@ async function approveItem(it){
   doc.records.forEach(function(r){ r.order=(typeof r.order==="number"?r.order:0)+1; });
   it.records.forEach(function(r){
     var lead = r.distance ? r.distance : (r.reps||"");
-    var raw_sets = (lead? lead+" \u00b7 " : "") + r.weight + "kg";
+    /* weight may be null: a bodyweight or named-load move the client logged as done,
+       as prescribed. It banks no kg (history_from_weights skips weight:null) but it
+       MUST still land in the store, because the round-up archive sweep looks for
+       source:client records to know a session happened at all. */
+    var hasW = (typeof r.weight === "number" && isFinite(r.weight) && r.weight > 0);
+    var raw_sets = (lead? lead+" \u00b7 " : "") + (hasW ? r.weight+"kg" : "as prescribed");
     doc.records.unshift({
       ex:r.ex, date:it.date, date_inferred:false, order:0,
       block_title:"Weight log \u00b7 "+fmtDate(it.date)+(r.program? " \u00b7 "+r.program : ""),
       program:r.program||null, type:"log", source:"client",
-      weight:r.weight, count:1, unit:"kg",
+      weight:(hasW?r.weight:null), count:(hasW?1:null), unit:(hasW?"kg":null),
       sets:(typeof r.sets==="number"?r.sets:null), reps:r.reps||null, distance:r.distance||null,
       raw_sets:raw_sets
     });
@@ -1616,7 +1621,10 @@ async function loadPending(){
     var who=esc(rosterName(it.code))+' <span style="opacity:.5;font-weight:500">('+esc(it.code)+')</span>';
     var lines=(it.records||[]).map(function(r){
       var d=r.distance?(" "+esc(r.distance)):(r.reps?(" "+esc(r.reps)):"");
-      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span><b class="pl-wv">'+esc(r.weight)+'kg</b><input class="pl-w" type="number" step="0.5" min="0" max="300" value="'+esc(r.weight)+'">kg</span><i>'+esc(r.program||"")+d+'</i></div>';
+      var hasW=(typeof r.weight==="number" && isFinite(r.weight) && r.weight>0);
+      var shown=hasW?(esc(r.weight)+'kg'):'<span style="opacity:.55;font-weight:500">as prescribed</span>';
+      var val=hasW?esc(r.weight):'';
+      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span><b class="pl-wv">'+shown+'</b><input class="pl-w" type="number" step="0.5" min="0" max="300" placeholder="\u2014" value="'+val+'">kg</span><i>'+esc(r.program||"")+d+'</i></div>';
     }).join("");
     return '<div class="pl-card" id="plc-'+i+'"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
       '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
