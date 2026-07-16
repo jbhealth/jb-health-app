@@ -751,12 +751,12 @@ function disconnectSync(){ if(!confirm("Remove the token and repo settings from 
   closeModal(); setSave("","Disconnected — saving on this device only."); }
 
 /* ---- sessions ---- */
-function seedDefaults(){ for(var i=0;i<CLIENTS.length;i++){ var code=CLIENTS[i][0],name=CLIENTS[i][1]; if(!data[code]) data[code]={name:name,entries:[]}; else if(!data[code].name) data[code].name=name; } seeded=true; }
+function seedDefaults(){ for(var code in data){ if(!data[code].entries) data[code].entries=[]; if(!data[code].name) data[code].name=CLIENT_NAMES[code]||code; } seeded=true; }
 function balance(code){ var ents=(data[code]&&data[code].entries)||[],s=0; for(var i=0;i<ents.length;i++){ s+=ents[i].type==="out"?-ents[i].sessions:ents[i].sessions; } return round2(s); }
 function render(){
   if(!seeded) seedDefaults();
   var owe=0,owingCount=0,credit=0;
-  for(var i=0;i<CLIENTS.length;i++){ var b=balance(CLIENTS[i][0]); if(b<0){owe+=-b;owingCount++;} else if(b>0){credit+=b;} }
+  for(var code in data){ var b=balance(code); if(b<0){owe+=-b;owingCount++;} else if(b>0){credit+=b;} }
   document.getElementById("summary").innerHTML='<div class="sum-card"><div class="sum-num owe">'+fmt(owe)+'</div><div class="sum-label">Sessions owed to you</div></div>'+
     '<div class="sum-card"><div class="sum-num">'+owingCount+'</div><div class="sum-label">Clients owing</div></div>'+
     '<div class="sum-card"><div class="sum-num credit">'+fmt(credit)+'</div><div class="sum-label">Sessions in credit</div></div>';
@@ -1385,10 +1385,10 @@ function renderPrograms(){
   /* Daily-prep split (in-person only): today's booked clients in session-time order on
      top, everyone else alphabetical below. Falls back to one In-person section when there
      is no valid today.json. Online is never reordered. */
-  var ipCodes=Object.keys(CLIENT_NAMES), todayCodes=[], todayTimes={};
+  var ipCodes=Object.keys(data), todayCodes=[], todayTimes={};
   if(TODAY_ORDER){
     var seen={}, ord=TODAY_ORDER.order.slice().sort(function(a,b){return String(a.t||"").localeCompare(String(b.t||""));});
-    for(var ti=0;ti<ord.length;ti++){ var cc=ord[ti].c; if(CLIENT_NAMES[cc] && !seen[cc]){ todayCodes.push(cc); todayTimes[cc]=ord[ti].t||""; seen[cc]=1; } }
+    for(var ti=0;ti<ord.length;ti++){ var cc=ord[ti].c; if(data[cc] && !seen[cc]){ todayCodes.push(cc); todayTimes[cc]=ord[ti].t||""; seen[cc]=1; } }
   }
   var inHtml;
   if(todayCodes.length){
