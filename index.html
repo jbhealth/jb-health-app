@@ -1453,6 +1453,7 @@ function loadMasterIntoFrame(mhtml, code){
         Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ _grow(t); t.addEventListener("input", function(){ _grow(t); }); }); }catch(e){}
       doc.addEventListener("input", function(){ scheduleDraft(code); }, true);
       doc.addEventListener("click", function(){ scheduleDraft(code); }, true);
+      doc.addEventListener("blur", function(){ scheduleDraft(code); }, true);   /* save the moment you click out of a pill */
     }catch(e){}
   };
   fr.src=window._progBlob;
@@ -1468,7 +1469,13 @@ function stripAppInject(doc){ try{
 }catch(e){} }
 function scheduleDraft(code){ if(_draftTimer) clearTimeout(_draftTimer); _draftTimer=setTimeout(function(){ saveDraft(code); },1500); }
 function saveDraft(code){
-  try{ var fr=document.getElementById("progFrame"); fr.contentWindow.bakeForExport();
+  try{ var fr=document.getElementById("progFrame");
+    /* A reps/sets/weight pill is open and being edited — baking now would strip its
+       contenteditable flag and boot the user out mid-type. Defer the draft save until
+       they click out (blur restores normal saving). */
+    var _ed=fr.contentDocument && fr.contentDocument.activeElement;
+    if(_ed && _ed.getAttribute && _ed.getAttribute("contenteditable")==="true"){ scheduleDraft(code); return; }
+    fr.contentWindow.bakeForExport();
     stripAppInject(fr.contentDocument);
     var h="<!DOCTYPE html>\n"+fr.contentDocument.documentElement.outerHTML;
     if(curMaster && curMaster.baseSig!==undefined && editSig(h)===curMaster.baseSig){
