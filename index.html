@@ -799,8 +799,16 @@ function openSession(code,name){ showModal('<h3>Session done — '+esc(name)+'</
   '<div class="field"><label>Date</label><input type="date" id="s_date" value="'+today()+'"></div>'+
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="saveSession(\''+code+'\')">Save</button></div>'); }
 function saveSession(code){ var s=round2(parseFloat(document.getElementById("s_sessions").value)); if(!s||s<=0){closeModal();return;} data[code].entries.push({id:uid(),date:document.getElementById("s_date").value,type:"out",sessions:s}); markPill(code); closeModal(); render(); save(); }
-function openPay(code,name){ var fc=financeCode(code), r=rateFor(fc);
-  var note = (r!==null&&r>0) ? ('Will add a finance line: <b>'+fc+'</b> at £'+r+'/session.') : 'No rate set — records the payment only, no finance line.';
+function rateMissing(fc){ return rateFor(fc)===null && RATES_MANUAL.indexOf(fc)<0; }
+function payNoteHtml(fc,s){ var r=rateFor(fc);
+  if(r!==null && r>0){ return (!s||s<=0) ? ('Will add a finance line: <b>'+fc+'</b> at £'+r+'/session.')
+    : ('Will add finance line: <b>'+fc+'</b> · '+s+' × £'+r+' = <b>£'+round2(s*r)+'</b> (100% business).'); }
+  if(RATES_MANUAL.indexOf(fc)>=0){ return 'Handled by hand (family or free). No finance line, as intended.'; }
+  return '<span style="display:block;background:var(--owe);color:var(--red);font-weight:600;padding:8px 10px;border-radius:6px;font-size:12.5px;line-height:1.45">'
+    + 'No rate set for <b>'+fc+'</b>. This will record the session credit but <b>no money in Finance</b>. '
+    + 'Add a rate to pricing.json, or add the Finance line by hand.</span>'; }
+function openPay(code,name){ var fc=financeCode(code);
+  var note = payNoteHtml(fc,null);
   showModal('<h3>Payment — '+esc(name)+'</h3>'+
   '<div class="field"><label>Sessions paid for</label><input type="number" inputmode="decimal" step="any" id="m_sessions" value="1" min="0" oninput="payPreview(\''+code+'\')"></div>'+
   '<div class="field"><label>Method</label><select id="m_method"><option>BACS</option><option>Cash</option><option>Friends/Family</option></select></div>'+
@@ -809,12 +817,13 @@ function openPay(code,name){ var fc=financeCode(code), r=rateFor(fc);
   '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Cancel</button><button class="mb-save" onclick="savePay(\''+code+'\')">Save</button></div>');
   payPreview(code); }
 function payPreview(code){ var el=document.getElementById("m_preview"); if(!el) return;
-  var fc=financeCode(code), r=rateFor(fc), s=round2(parseFloat((document.getElementById("m_sessions")||{}).value));
-  if(r===null||r<=0){ el.innerHTML='No rate set — records the payment only, no finance line.'; return; }
-  if(!s||s<=0){ el.innerHTML='Will add a finance line: <b>'+fc+'</b> at £'+r+'/session.'; return; }
-  el.innerHTML='Will add finance line: <b>'+fc+'</b> · '+s+' × £'+r+' = <b>£'+round2(s*r)+'</b> (100% business).'; }
+  var fc=financeCode(code), s=round2(parseFloat((document.getElementById("m_sessions")||{}).value));
+  el.innerHTML=payNoteHtml(fc,s); }
 function savePay(code){ var s=round2(parseFloat(document.getElementById("m_sessions").value)); if(!s||s<=0){closeModal();return;}
   var dt=document.getElementById("m_date").value, method=document.getElementById("m_method").value;
+  if(rateMissing(financeCode(code)) && method!=="Friends/Family"){
+    if(!confirm("No rate set for "+financeCode(code)+".\n\nThe session credit will be saved but nothing will appear in Finance. Save anyway?")) return;
+  }
   var eid=uid(), linkId="pay_"+eid;
   data[code].entries.push({id:eid,date:dt,type:"in",sessions:s,method:method,linkId:linkId}); markPill(code);
   /* Auto finance line: sessions x rate, only when a numeric rate exists (free/family skipped) */
