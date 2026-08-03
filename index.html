@@ -1121,7 +1121,7 @@ function openOverview(){
    Wife is PAYE (her allowance is spent on her wage), so ONE personal allowance applies to
    the partnership profit. Conservative single Class 4 threshold. Pensions not deducted. */
 function openTax(){
-  var PA=12570, IT=0.20, NI4=0.06, NI4T=12570, WIFE_BASE=1900, HR=50270, SL=0.09, SLT=26900, WAGE=25000, HISPOA=4251.62, HERPOA=0, PY_POA2=2333.73, PY_BAL=5031.09, MA=252;
+  var PA=12570, IT=0.20, NI4=0.06, NI4T=12570, WIFE_BASE=1900, HR=50270, SL=0.09, SLT=26900, WAGE=25000, HISPOA=4251.62, HERPOA=0, PY_POA2=2333.73, PY_BAL=4922.26, MA=252;
   function taxYear(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
   var curMo=today().slice(0,7), curTY=taxYear(curMo);
   var by={};
