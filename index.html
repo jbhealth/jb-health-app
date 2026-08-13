@@ -1925,7 +1925,47 @@ async function fetchPending(){
 async function resolvePending(key){
   await fetch(WORKER+"/resolve", {method:"POST", headers:{"content-type":"application/json","x-jb-admin":adminTok()}, body:JSON.stringify({key:key})});
 }
+async /* Ingest-on-approval (build step 6): Approve dispatches the ingest Action,
+   which strict-matches the log against the live master, writes the full-workout
+   archive block, banks the store, and republishes the client — or flags and
+   writes NOTHING, leaving the item pending for the roundup. Dispatch failure
+   falls back to the legacy bank-only path so a GitHub wobble never blocks you. */
 async function approveItem(it){
+  var since=Math.floor(Date.now()/1000)-5;
+  try{
+    var r=await fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/actions/workflows/ingest.yml/dispatches",{
+      method:"POST",headers:progHeaders(),
+      body:JSON.stringify({ref:PCFG.branch,inputs:{
+        code:it.code,date:it.date,records:JSON.stringify(it.records||[])}})});
+    if(!r.ok&&r.status!==204) throw new Error("dispatch "+r.status);
+  }catch(e){
+    await approveItemLegacy(it);
+    alert("Ingest Action unavailable ("+e.message+") \u2014 banked to the weight store only; the roundup will archive it as before.");
+    return;
+  }
+  /* poll the outcome the Action writes to masters */
+  for(var i=0;i<24;i++){
+    await new Promise(function(res){ setTimeout(res,10000); });
+    try{
+      var rr=await fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/ingest-last.json?ref="+PCFG.branch+"&t="+Date.now(),{headers:progHeaders()});
+      if(!rr.ok) continue;
+      var res=JSON.parse(b64ToUtf8((await rr.json()).content));
+      if(res.ts<since||res.code!==it.code) continue;
+      if(res.status==="ok"){
+        await resolvePending(it.key);
+        return;
+      }
+      throw new Error("left for the roundup \u2014 "+(res.reason||"needs judgement"));
+    }catch(e){
+      if(String(e.message).indexOf("roundup")>-1) throw e;
+    }
+  }
+  throw new Error("Action still running \u2014 check back shortly; the item stays pending");
+}
+
+/* Legacy path: bank-only into the weight store (archive waits for the roundup).
+   Kept as the automatic fallback when the ingest Action can't be dispatched. */
+async function approveItemLegacy(it){
   if(!ghConfigured()) throw new Error("connect the data repo in Sync first");
   var got=await ghGetWeights(it.code);
   var doc=got.doc||{code:it.code, schema:1, generated:"", records:[]};
