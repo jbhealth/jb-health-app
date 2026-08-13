@@ -1484,6 +1484,7 @@ function loadMasterIntoFrame(mhtml, code){
       if(doc.body && !doc.querySelector(".jb-foot")){ var ft=doc.createElement("div"); ft.className="jb-foot"; ft.setAttribute("data-appinject","1"); ft.innerHTML='JB Health \u00b7 <a href="https://jbhealth.co.uk" target="_blank" rel="noopener">jbhealth.co.uk</a>'; doc.body.appendChild(ft); }
       try{ var _grow=function(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; };
         Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ _grow(t); t.addEventListener("input", function(){ _grow(t); }); }); }catch(e){}
+      try{ enhanceEditor(doc); }catch(e){}
       doc.addEventListener("input", function(){ scheduleDraft(code); }, true);
       doc.addEventListener("click", function(){ scheduleDraft(code); }, true);
       doc.addEventListener("blur", function(){ scheduleDraft(code); }, true);   /* save the moment you click out of a pill */
@@ -1495,11 +1496,204 @@ function loadMasterIntoFrame(mhtml, code){
   setSave("ok","Master loaded \u2014 edit, then Push to Git.");
 }
 
-function stripAppInject(doc){ try{
-  var s=doc.getElementById("jbAppInjectCSS"); if(s)s.remove();
-  Array.prototype.forEach.call(doc.querySelectorAll("[data-appinject]"), function(n){ n.remove(); });
-  Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ t.style.removeProperty("height"); });
+/* ── Editor enhancements (injected, stripped on export via data-appinject) ──
+   Arrows reorder exercise cards; the name picker autofills from the library
+   names list (masters/system/00_-_exercise_names.json, a make_index.py output).
+   Nothing injected here survives bakeForExport + stripAppInject. */
+var _exNames=null;
+function loadExNames(){
+  if(_exNames) return Promise.resolve(_exNames);
+  var cached=lsGet("jbh_exnames");
+  var p=fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/00_-_exercise_names.json?ref="+PCFG.branch,{headers:progHeaders()})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(j){ _exNames=JSON.parse(b64ToUtf8(j.content)); lsSet("jbh_exnames",JSON.stringify(_exNames)); return _exNames; })
+    .catch(function(){ if(cached){ _exNames=JSON.parse(cached); return _exNames; } return null; });
+  return p;
+}
+var _exPicker=null;
+function loadExPicker(){
+  if(_exPicker) return Promise.resolve(_exPicker);
+  var cached=lsGet("jbh_expicker");
+  return fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/00_-_exercise_picker.json?ref="+PCFG.branch,{headers:progHeaders()})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(j){
+      var raw = j.content ? b64ToUtf8(j.content) : null;
+      if(raw===null && j.git_url){ return fetch(j.git_url,{headers:progHeaders()}).then(function(r2){return r2.json();}).then(function(b){ return b64ToUtf8(b.content); }); }
+      return raw;
+    })
+    .then(function(raw){
+      _exPicker={}; JSON.parse(raw).exercises.forEach(function(e){ _exPicker[e.name]=e; });
+      try{ lsSet("jbh_expicker", raw); }catch(e){}
+      return _exPicker;
+    })
+    .catch(function(){ if(cached){ _exPicker={}; JSON.parse(cached).exercises.forEach(function(e){ _exPicker[e.name]=e; }); return _exPicker; } return null; });
+}
+function enhanceEditor(doc){
+  loadExNames();
+  loadExPicker();
+  Array.prototype.forEach.call(doc.querySelectorAll(".badge-weight.placeholder"),function(p){
+    if(!p.textContent.trim()) p.textContent="weight";
+  });
+  function addArrows(card){
+    if(card.querySelector(".jb-arr")) return;
+    ["\u25B2","\u25BC"].forEach(function(ch,down){
+      var b=doc.createElement("button");
+      b.className="jb-arr"; b.setAttribute("data-appinject","1"); b.type="button";
+      b.textContent=ch;
+      b.style.cssText="position:absolute;left:8px;top:"+(down?52:22)+"px;width:30px;height:26px;border:1px solid var(--border,#D4E4F0);background:#fff;color:var(--blue,#2E86C1);border-radius:7px;font-size:11px;cursor:pointer;padding:0;line-height:1;";
+      b.onclick=function(ev){
+        ev.preventDefault();
+        var sib=card, hop=null;
+        while(true){
+          sib=down?sib.nextElementSibling:sib.previousElementSibling;
+          if(!sib) return;
+          if(sib.classList&&sib.classList.contains("exercise-card")){ hop=sib; break; }
+        }
+        if(down) hop.parentNode.insertBefore(card, hop.nextSibling);
+        else hop.parentNode.insertBefore(card, hop);
+        card.scrollIntoView({block:"nearest",behavior:"smooth"});
+      };
+      card.appendChild(b);
+    });
+  }
+  Array.prototype.forEach.call(doc.querySelectorAll(".exercise-card"), addArrows);
+  new (fr_win(doc).MutationObserver||MutationObserver)(function(muts){
+    muts.forEach(function(m){ Array.prototype.forEach.call(m.addedNodes,function(n){
+      if(n.nodeType===1){ if(n.classList&&n.classList.contains("exercise-card")) addArrows(n);
+        if(n.querySelectorAll) Array.prototype.forEach.call(n.querySelectorAll(".exercise-card"),addArrows); }
+    });});
+  }).observe(doc.body,{childList:true,subtree:true});
+  /* name picker: delegated so cards added later work too */
+  var dd=doc.createElement("div");
+  dd.setAttribute("data-appinject","1");
+  dd.style.cssText="position:absolute;display:none;z-index:999;background:#fff;border:1px solid var(--border,#D4E4F0);border-radius:10px;box-shadow:0 8px 26px rgba(27,63,107,0.16);max-height:230px;overflow:auto;min-width:230px;";
+  doc.body.appendChild(dd);
+  var curInput=null;
+  function hideDD(){ dd.style.display="none"; curInput=null; }
+  function _escH(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function pick(name){
+    if(!curInput) return;
+    var card=curInput.closest(".exercise-card");
+    var e=_exPicker&&_exPicker[name];
+    if(card&&e&&buildCardFromPick(card,e)){ hideDD(); return; }
+    /* fallback (picker not loaded yet, or card outside a panel): fill the name,
+       stub_enrich completes it at build exactly as before */
+    curInput.value=name;
+    try{ var reps=card&&card.querySelector(".badge-input");
+      if(reps&&!reps.value.trim()){ reps.value="3 x 10"; } }catch(err){}
+    curInput.dispatchEvent(new (fr_win(doc).Event||Event)("input",{bubbles:true}));
+    hideDD();
+  }
+  /* Replace a stub card with the CANONICAL built card — byte-matched to
+     stub_enrich.py's _card_html so pick-time and build-time enrichment can
+     never diverge. stub_enrich stays in the build path as the backstop for
+     free-text stubs that were never picked. */
+  function buildCardFromPick(stubCard,e){
+    try{
+      var panel=stubCard.closest(".program-panel");
+      if(!panel||!/^program-\d+$/.test(panel.id||"")) return false;
+      var pid=parseInt(panel.id.slice(8),10);
+      var n=0;
+      Array.prototype.forEach.call(panel.querySelectorAll("[data-id]"),function(el){
+        var m=(el.getAttribute("data-id")||"").match(new RegExp("^p"+pid+"-ex(\\d+)$"));
+        if(m) n=Math.max(n,parseInt(m[1],10)+1);
+      });
+      var dataId="p"+pid+"-ex"+n;
+      var badges=stubCard.querySelectorAll(".badge-input");
+      var sets=(badges[0]&&badges[0].value.trim())||"3 x 10";
+      var weight=(badges[1]&&badges[1].value.trim())||"";
+      var noteTa=stubCard.querySelector(".trainer-note-input");
+      var note=noteTa?noteTa.value:"";
+      var classes=(" "+stubCard.className.replace(/\s+/g," ").trim()).replace(" exercise-card","");
+      if(classes===" ") classes="";
+      var golf=false; try{ golf=!!(curMaster&&isGolf(curMaster.code)); }catch(err){}
+      var d=e.d||{};
+      var eq=(e.eq||[]).filter(function(q){return q!=="None";});
+      var eqWord=eq.length?eq.join("/"):"Bodyweight";
+      var wb=weight?'<span class="badge badge-weight">'+_escH(weight)+"</span>"
+                    :'<span class="badge badge-weight placeholder">weight</span>';
+      var gl=(golf&&d.golf)?"<p><strong>For your game:</strong> "+_escH(d.golf)+"</p>":"";
+      var cl=classes.indexOf("collapsed")>-1?classes:classes+" collapsed";
+      var cardHtml='<div class="exercise-card'+cl+'" data-id="'+dataId+'">'
+        +'<button class="insert-ex-btn" onclick="insertExerciseAbove(this)">+ Insert exercise above</button>'
+        +'<button class="remove-ex-btn" onclick="removeExercise(this)" aria-label="Remove">x</button>\n'
+        +'      <div class="ex-top"><span class="ex-collapse-chevron" aria-label="Toggle details">\u2304</span>'
+        +'<div class="ex-name" style="cursor: pointer;">'+_escH(e.name)+"</div>"
+        +'<div class="ex-badges"><span class="badge badge-sets">'+_escH(sets)+"</span>"
+        +'<span class="badge badge-equip">'+_escH(eqWord)+"</span>"+wb+"</div></div>\n"
+        +'      <div class="ex-desc"><p><strong>Start:</strong> '+_escH(d.start_position)+"</p>"
+        +"<p><strong>Movement:</strong> "+_escH(d.movement)+"</p>"
+        +"<p><strong>Focus:</strong> "+_escH(d.focus)+"</p>"+gl+"</div>\n"
+        +'      <div class="trainer-notes-wrap"><div class="trainer-notes-label">Trainer Notes</div>'
+        +'<textarea class="trainer-note-input" data-key="'+dataId+'-note" placeholder="Notes..." style=""></textarea></div>\n'
+        +"    </div>";
+      var tmp=doc.createElement("div");
+      tmp.innerHTML=cardHtml;
+      var newCard=tmp.firstChild;
+      var ta=newCard.querySelector(".trainer-note-input");
+      if(ta&&note){ ta.value=note; ta.textContent=note; }
+      stubCard.parentNode.replaceChild(newCard,stubCard);
+      newCard.classList.remove("collapsed");   /* expanded for the session; applyCues resets on every load */
+      try{ fr_win(doc).initCues(); }catch(err){}
+      try{ fr_win(doc)._enhanceCards(); }catch(err){}
+      try{ doc.dispatchEvent(new (fr_win(doc).Event||Event)("input",{bubbles:true})); }catch(err){}
+      newCard.scrollIntoView({block:"nearest",behavior:"smooth"});
+      return true;
+    }catch(err){ return false; }
+  }
+  function showDD(inp){
+    if(!_exNames){ return; }
+    var q=inp.value.trim().toLowerCase();
+    if(q.length<2){ hideDD(); return; }
+    var hits=[], syn=_exNames.syn||{};
+    for(var i=0;i<_exNames.names.length&&hits.length<8;i++){
+      if(_exNames.names[i].toLowerCase().indexOf(q)>-1) hits.push(_exNames.names[i]);
+    }
+    if(hits.length<8){ for(var k in syn){ if(hits.length>=8) break;
+      if(k.indexOf(q)>-1 && hits.indexOf(syn[k])===-1) hits.push(syn[k]); } }
+    if(!hits.length){ hideDD(); return; }
+    dd.innerHTML="";
+    hits.forEach(function(nm){
+      var it=doc.createElement("div");
+      it.textContent=nm;
+      it.style.cssText="padding:9px 13px;font-size:13px;color:var(--navy,#1B3F6B);cursor:pointer;border-bottom:1px solid rgba(27,63,107,0.06);";
+      it.onmousedown=function(ev){ ev.preventDefault(); pick(nm); };
+      dd.appendChild(it);
+    });
+    var r=inp.getBoundingClientRect(), sy=fr_win(doc).scrollY||0, sx=fr_win(doc).scrollX||0;
+    dd.style.left=(r.left+sx)+"px"; dd.style.top=(r.bottom+sy+4)+"px"; dd.style.display="block";
+    curInput=inp;
+  }
+  doc.addEventListener("input",function(ev){
+    if(ev.target&&ev.target.classList&&ev.target.classList.contains("ex-name-input")) showDD(ev.target);
+  },true);
+  doc.addEventListener("focusin",function(ev){
+    if(ev.target&&ev.target.classList&&ev.target.classList.contains("ex-name-input")) showDD(ev.target);
+    else hideDD();
+  },true);
+  doc.addEventListener("focusout",function(ev){
+    if(ev.target===curInput) setTimeout(hideDD,150);
+  },true);
+}
+function fr_win(doc){ return doc.defaultView||window; }
+function stripAppInject(root){ try{
+  var q=function(sel){ return root.querySelectorAll?root.querySelectorAll(sel):[]; };
+  Array.prototype.forEach.call(q("#jbAppInjectCSS"), function(n){ n.remove(); });
+  Array.prototype.forEach.call(q("[data-appinject]"), function(n){ n.remove(); });
+  Array.prototype.forEach.call(q(".trainer-note-input,.session-note-input"), function(t){ t.style.removeProperty("height"); });
+  /* placeholder weight pills export EMPTY so build_client never reads the word
+     "weight" as a load; the in-session "weight" tap-target text is display-only */
+  Array.prototype.forEach.call(q(".badge-weight.placeholder"), function(p){ p.textContent=""; });
 }catch(e){} }
+/* Serialise the master WITHOUT mutating the live editor: bake (live, harmless),
+   then clone, strip the clone, and read the clone. Fixes injected UI (arrows,
+   picker, footer) vanishing from the open editor on the first draft save. */
+function exportMasterHtml(fr){
+  fr.contentWindow.bakeForExport();
+  var clone=fr.contentDocument.documentElement.cloneNode(true);
+  stripAppInject(clone);
+  return "<!DOCTYPE html>\n"+clone.outerHTML;
+}
 function scheduleDraft(code){ if(_draftTimer) clearTimeout(_draftTimer); _draftTimer=setTimeout(function(){ saveDraft(code); },1500); }
 function saveDraft(code){
   try{ var fr=document.getElementById("progFrame");
@@ -1508,9 +1702,7 @@ function saveDraft(code){
        they click out (blur restores normal saving). */
     var _ed=fr.contentDocument && fr.contentDocument.activeElement;
     if(_ed && _ed.getAttribute && _ed.getAttribute("contenteditable")==="true"){ scheduleDraft(code); return; }
-    fr.contentWindow.bakeForExport();
-    stripAppInject(fr.contentDocument);
-    var h="<!DOCTYPE html>\n"+fr.contentDocument.documentElement.outerHTML;
+    var h=exportMasterHtml(fr);
     if(curMaster && curMaster.baseSig!==undefined && editSig(h)===curMaster.baseSig){
       // no real change vs the loaded master — don't create a phantom draft
       lsDel("jbh_draft_"+code); lsDel("jbh_draftbase_"+code); return;
@@ -1534,9 +1726,7 @@ function pullMaster(){ if(!curMaster) return;
 async function pushMaster(){
   if(!curMaster) return;
   var fr=document.getElementById("progFrame");
-  try{ fr.contentWindow.bakeForExport(); }catch(e){ setSave("warn","Couldn\u2019t read the editor."); return; }
-  stripAppInject(fr.contentDocument);
-  var mhtml="<!DOCTYPE html>\n"+fr.contentDocument.documentElement.outerHTML;
+  var mhtml; try{ mhtml=exportMasterHtml(fr); }catch(e){ setSave("warn","Couldn\u2019t read the editor."); return; }
   var cardsNow=(mhtml.match(/class="exercise-card/g)||[]).length;
   if(cardsNow===0 && curMaster.cardsOrig>0){
     setSave("warn","Push blocked \u2014 editor content looks empty.");
