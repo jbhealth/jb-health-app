@@ -273,7 +273,7 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
   <div class="list" style="padding-top:16px">
     <div class="client"><div class="client-row" style="cursor:default">
       <div style="min-width:0"><div class="client-name">Close out day</div><div class="client-sub">Stage today + tomorrow from the Bakes calendar</div></div>
-      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Close out day','the close-out Shortcut and Worker /day endpoint (build step 2)')">Run</button>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="runCloseOut()">Run</button>
     </div></div>
     <div class="client"><div class="client-row" style="cursor:default">
       <div style="min-width:0"><div class="client-name">Build invoice</div><div class="client-sub">Full-month class count &rarr; invoice &rarr; email to Jules</div></div>
@@ -283,15 +283,18 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
       <div style="min-width:0"><div class="client-name">VAT check</div><div class="client-sub">Rolling 12-month taxable turnover vs the &pound;90k threshold</div></div>
       <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();runVatCheck()">Run</button>
     </div><div class="client-body" id="vatBody" style="display:none;padding-top:12px"><div id="vatResult"></div></div></div>
-    <div class="client"><div class="client-row" style="cursor:default">
-      <div style="min-width:0"><div class="client-name">Today refresh</div><div class="client-sub">Re-stage today.json for the dashboard order</div></div>
-      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Today refresh','the close-out Shortcut and staged Worker data (build step 2)')">Run</button>
-    </div></div>
+    <div class="client" id="todayCard"><div class="client-row" style="cursor:default">
+      <div style="min-width:0"><div class="client-name">Today refresh</div><div class="client-sub">Build today.json from the staged calendar day</div></div>
+      <div style="display:flex;gap:6px;flex:none">
+        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="loadStagedDay(0)">Today</button>
+        <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="loadStagedDay(1)">Tomorrow</button>
+      </div>
+    </div><div class="client-body" id="todayBody" style="display:none;padding-top:12px"><div id="todayResult"></div></div></div>
     <div class="client"><div class="client-row" style="cursor:default">
       <div style="min-width:0"><div class="client-name">Republish</div><div class="client-sub">Rebuild client pages via GitHub Actions, dry-run first</div></div>
       <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Republish','the GitHub Actions workflow and deploy key (build step 5)')">Run</button>
     </div></div>
-    <div class="note">Buttons marked as coming soon go live as each build step lands. VAT check runs now.</div>
+    <div class="note">Close out day runs the JB Close Out Shortcut. VAT check and Today refresh are live. Build invoice and Republish arrive with later build steps.</div>
   </div>
 </div>
 
@@ -1702,6 +1705,85 @@ function toggleVat(){
 }
 function actStub(name, needs){
   alert(name+" is not wired up yet. It needs "+needs+".");
+}
+function runCloseOut(){
+  window.location.href="shortcuts://run-shortcut?name="+encodeURIComponent("JB Close Out");
+}
+/* ── Staged day → today.json ──
+   The Shortcut stages [PT]/[Class] events in Worker KV. This flow pulls a staged
+   date, resolves calendar names to codes via a map that lives ONLY in this device's
+   localStorage (jbh_roster) — the public app file carries no names, and the map
+   teaches itself: any name you resolve by hand once is remembered. */
+function rosterMap(){ try{ return JSON.parse(lsGet("jbh_roster")||"{}"); }catch(e){ return {}; } }
+function rosterSave(m){ lsSet("jbh_roster", JSON.stringify(m)); }
+function stagedDateFor(offset){
+  var d=new Date(); d.setDate(d.getDate()+offset);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+var _staged=null,_stagedOffset=0;
+function loadStagedDay(offset){
+  _stagedOffset=offset;
+  var body=document.getElementById("todayBody"),out=document.getElementById("todayResult");
+  body.style.display="block";
+  out.innerHTML='<div class="empty-hist">Fetching staged day\u2026</div>';
+  var at=adminTok();
+  if(!at){ out.innerHTML='<div class="empty-hist">Set the endpoint admin token first (Pending tab).</div>'; return; }
+  var date=stagedDateFor(offset);
+  fetch(WORKER+"/day?date="+date,{headers:{"x-jb-admin":at}})
+  .then(function(r){ return r.json(); })
+  .then(function(j){
+    if(!j.ok){ out.innerHTML='<div class="empty-hist">Nothing staged for '+date+'. Run Close out day first.</div>'; _staged=null; return; }
+    _staged=j.day; renderStagedDay();
+  })
+  .catch(function(e){ out.innerHTML='<div class="empty-hist">Fetch failed ('+e.message+').</div>'; });
+}
+function stagedName(title){ return title.replace(/^\[(PT|Class)\]/i,"").trim(); }
+function renderStagedDay(){
+  var out=document.getElementById("todayResult"), map=rosterMap();
+  var codes=Object.keys(data).sort();
+  var pts=_staged.events.filter(function(ev){ return /^\[PT\]/i.test(ev.title); });
+  if(!pts.length){ out.innerHTML='<div class="empty-hist">No [PT] events staged for '+_staged.date+'.</div>'; return; }
+  var html='<div class="hist-label">'+_staged.date+' \u2014 pick a code for anything unresolved</div>';
+  pts.forEach(function(ev,i){
+    var nm=stagedName(ev.title), known=map[nm.toLowerCase()]||"";
+    var opts='<option value="">\u2014</option><option value="__skip">skip</option>';
+    codes.forEach(function(c){ opts+='<option value="'+c+'"'+(c===known?' selected':'')+'>'+c+'</option>'; });
+    html+='<div class="entry"><div class="entry-main"><span class="entry-meta">'+(ev.start||"?")+'</span> <b>'+nm+'</b></div>'
+        +'<select class="stg-code" data-name="'+nm.replace(/"/g,"&quot;")+'" style="border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px">'+opts+'</select></div>';
+  });
+  html+='<div class="actions" style="margin-top:12px"><button class="act session" onclick="pushTodayJson()">Push today.json</button></div>';
+  out.innerHTML=html;
+}
+function pushTodayJson(){
+  var out=document.getElementById("todayResult"), map=rosterMap();
+  var sels=out.querySelectorAll("select.stg-code"), order=[], unresolved=[];
+  var pts=_staged.events.filter(function(ev){ return /^\[PT\]/i.test(ev.title); });
+  sels.forEach(function(s,i){
+    var code=s.value, nm=s.getAttribute("data-name");
+    if(code==="__skip") return;
+    if(!code){ unresolved.push(nm); return; }
+    map[nm.toLowerCase()]=code;
+    order.push({c:code,t:pts[i].start||""});
+  });
+  if(unresolved.length){ alert("Pick a code (or skip) for: "+unresolved.join(", ")); return; }
+  if(!order.length){ alert("Nothing to push."); return; }
+  rosterSave(map);
+  order.sort(function(a,b){ return a.t.localeCompare(b.t); });
+  var payload={date:_staged.date, order:order};
+  if(!confirm("Push today.json for "+_staged.date+" ("+order.length+" clients)?")) return;
+  out.innerHTML='<div class="empty-hist">Pushing\u2026</div>';
+  var api="https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.programs+"/contents/today.json";
+  fetch(api,{headers:progHeaders()})
+  .then(function(r){ return r.ok?r.json():null; })
+  .then(function(cur){
+    var b={message:"today.json for "+_staged.date+" (staged day, in-app)",
+           content:btoa(unescape(encodeURIComponent(JSON.stringify(payload,null,1))))};
+    if(cur&&cur.sha) b.sha=cur.sha;
+    return fetch(api,{method:"PUT",headers:progHeaders(),body:JSON.stringify(b)});
+  })
+  .then(function(r){ if(!r.ok) throw new Error("push "+r.status); return r.json(); })
+  .then(function(){ out.innerHTML='<div class="empty-hist" style="color:var(--green)">Pushed \u2713 \u2014 dashboard ordered for '+_staged.date+'.</div>'; })
+  .catch(function(e){ out.innerHTML='<div class="empty-hist">Push failed ('+e.message+').</div>'; });
 }
 
 /* VAT watch — JS port of masters/system/vat_watch.py (thresholds and rules mirrored).
