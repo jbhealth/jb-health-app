@@ -279,9 +279,9 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
       <div style="min-width:0"><div class="client-name">Build invoice</div><div class="client-sub">Full-month class count &rarr; invoice &rarr; email to Jules</div></div>
       <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Build invoice','the month-read Shortcut and Worker invoice build (build step 8)')">Run</button>
     </div></div>
-    <div class="client" id="vatCard"><div class="client-row" style="cursor:default">
+    <div class="client" id="vatCard"><div class="client-row" onclick="toggleVat()">
       <div style="min-width:0"><div class="client-name">VAT check</div><div class="client-sub">Rolling 12-month taxable turnover vs the &pound;90k threshold</div></div>
-      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="runVatCheck()">Run</button>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();runVatCheck()">Run</button>
     </div><div class="client-body" id="vatBody" style="display:none;padding-top:12px"><div id="vatResult"></div></div></div>
     <div class="client"><div class="client-row" style="cursor:default">
       <div style="min-width:0"><div class="client-name">Today refresh</div><div class="client-sub">Re-stage today.json for the dashboard order</div></div>
@@ -1695,6 +1695,11 @@ document.addEventListener("visibilitychange", function(){ if(document.visibility
 window.addEventListener("pagehide", function(){ osBadge(_pending.length); });
 
 /* ── Actions tab ── */
+function toggleVat(){
+  var body=document.getElementById("vatBody");
+  if(body.style.display==="block"){ body.style.display="none"; }
+  else if(document.getElementById("vatResult").innerHTML){ body.style.display="block"; }
+}
 function actStub(name, needs){
   alert(name+" is not wired up yet. It needs "+needs+".");
 }
