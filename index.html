@@ -297,10 +297,10 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
         <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();repubStart('all')">All</button>
       </div>
     </div><div class="client-body" id="repubBody" style="display:none;padding-top:12px"><div id="repubResult"></div></div></div>
-    <div class="client"><div class="client-row" style="cursor:default">
-      <div style="min-width:0"><div class="client-name">Build invoice</div><div class="client-sub">Counts the month's classes and drafts the Combe Grove invoice + email to Jules. Month-end job.</div></div>
-      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Build invoice','the month-read Shortcut and Worker invoice build (build step 8)')">Run</button>
-    </div></div>
+    <div class="client" id="invCard"><div class="client-row" onclick="toggleActBody('invBody','invResult')">
+      <div style="min-width:0"><div class="client-name">Build invoice</div><div class="client-sub">Counts the month's classes from the calendar and builds the Combe Grove invoice + email to Jules. Month-end job.</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();invStart()">Run</button>
+    </div><div class="client-body" id="invBody" style="display:none;padding-top:12px"><div id="invResult"></div></div></div>
     <div class="client" id="vatCard"><div class="client-row" onclick="toggleVat()">
       <div style="min-width:0"><div class="client-name">VAT check</div><div class="client-sub">Where your rolling 12-month turnover sits against the &pound;90k line. Glance monthly.</div></div>
       <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();runVatCheck()">Run</button>
@@ -2179,6 +2179,101 @@ function renderRepub(res){
     if(bad) html+='<div class="empty-hist">'+bad+' client(s) need attention \u2014 they are skipped, never pushed broken.</div>';
   }
   out.innerHTML=html;
+}
+/* ── Build invoice (step 8) ──
+   Calendar truth, flat count: the JB Month Read Shortcut stages the month's
+   [Class] events; this reads them, numbers the invoice from the repo, shows a
+   sign-off, then the invoice Action builds the branded docx, files it in
+   jb-health-data, deposits a copy on the Worker, and the Mail Shortcut opens
+   the email to Jules with it attached. */
+var _inv={ym:null,since:0,classes:null,number:null};
+function invStart(){
+  var body=document.getElementById("invBody"),out=document.getElementById("invResult");
+  body.style.display="block";
+  var now=new Date();
+  var def=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+  var ym=prompt("Invoice month (YYYY-MM):",def);
+  if(!ym) return;
+  ym=ym.trim();
+  if(!/^\d{4}-\d{2}$/.test(ym)){ out.innerHTML='<div class="empty-hist">Month must be YYYY-MM.</div>'; return; }
+  var at=adminTok();
+  if(!at||!progToken()){ out.innerHTML='<div class="empty-hist">Set both tokens first (Programs tab + Pending tab).</div>'; return; }
+  _inv.ym=ym;
+  out.innerHTML='<div class="empty-hist">Reading staged month\u2026</div>';
+  fetch(WORKER+"/month?ym="+ym,{headers:{"x-jb-admin":at}})
+  .then(function(r){ return r.json(); })
+  .then(function(j){
+    if(!j.ok||!j.days||!j.days.length){
+      out.innerHTML='<div class="empty-hist">Nothing staged for '+ym+'. Run the month Shortcut, then tap Run again.</div>'
+        +'<div class="actions" style="margin-top:10px"><button class="act session" onclick="window.location.href=\'shortcuts://run-shortcut?name=\'+encodeURIComponent(\'JB Month Read\')">Run JB Month Read</button></div>';
+      return;
+    }
+    var classes=[];
+    j.days.forEach(function(dd){
+      (dd.events||[]).forEach(function(ev){
+        var m=/^\[Class\]\s*(.*)$/i.exec(ev.title||"");
+        if(m) classes.push([dd.date, (m[1]||"Class").trim()||"Class"]);
+      });
+    });
+    if(!classes.length){ out.innerHTML='<div class="empty-hist">Staged days found but no [Class] events in '+ym+'.</div>'; return; }
+    classes.sort(function(a,b){ return a[0].localeCompare(b[0]); });
+    _inv.classes=classes;
+    /* number: reuse the file already filed for this month, else max+1 */
+    fetch("https://api.github.com/repos/"+PCFG.owner+"/jb-health-data/contents/invoices/combe-grove?ref="+PCFG.branch,{headers:progHeaders()})
+    .then(function(r){ return r.ok?r.json():[]; })
+    .then(function(files){
+      var mons=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      var tag="_"+mons[parseInt(ym.slice(5,7),10)-1]+"_"+ym.slice(0,4)+".docx";
+      var num=null,maxn=0;
+      (files||[]).forEach(function(f){
+        var mm=/^Invoice_(\d+)_/.exec(f.name||"");
+        if(!mm) return;
+        var n=parseInt(mm[1],10);
+        if(n>maxn) maxn=n;
+        if((f.name||"").indexOf(tag)>-1) num=n;
+      });
+      _inv.number=num||(maxn+1);
+      renderInvPlan();
+    });
+  })
+  .catch(function(e){ out.innerHTML='<div class="empty-hist">Worker unreachable ('+e.message+').</div>'; });
+}
+function renderInvPlan(){
+  var out=document.getElementById("invResult");
+  var total=_inv.classes.length*30;
+  var html='<div class="hist-label">Invoice #'+_inv.number+' \u00b7 '+_inv.ym+' \u00b7 '+_inv.classes.length+' classes \u00d7 \u00a330 = \u00a3'+total+'</div>';
+  _inv.classes.forEach(function(c){
+    html+='<div class="mini-row"><span>'+c[0]+'</span><span>'+c[1]+"</span></div>";
+  });
+  html+='<div class="actions" style="margin-top:12px"><button class="act session" onclick="invBuild()">Build #'+_inv.number+'</button></div>';
+  out.innerHTML=html;
+}
+function invBuild(){
+  var out=document.getElementById("invResult");
+  _inv.since=Math.floor(Date.now()/1000)-5;
+  var created=new Date().toISOString().slice(0,10);
+  fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/actions/workflows/invoice.yml/dispatches",{
+    method:"POST",headers:progHeaders(),
+    body:JSON.stringify({ref:PCFG.branch,inputs:{
+      number:String(_inv.number),ym:_inv.ym,created:created,classes:JSON.stringify(_inv.classes)}})})
+  .then(function(r){
+    if(!r.ok&&r.status!==204) throw new Error("dispatch "+r.status);
+    out.innerHTML='<div class="empty-hist">Building invoice \u2014 about a minute\u2026</div>';
+    setTimeout(invPoll,15000);
+  })
+  .catch(function(e){ out.innerHTML='<div class="empty-hist">'+e.message+'</div>'; });
+}
+function invPoll(){
+  var out=document.getElementById("invResult");
+  fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/invoice-last.json?ref="+PCFG.branch+"&t="+Date.now(),{headers:progHeaders()})
+  .then(function(r){ if(!r.ok) throw new Error("wait"); return r.json(); })
+  .then(function(d){
+    var res=JSON.parse(b64ToUtf8(d.content));
+    if(res.ts<_inv.since||res.ym!==_inv.ym) throw new Error("stale");
+    out.innerHTML='<div class="empty-hist" style="color:var(--green)">'+res.filename+' filed \u2713</div>'
+      +'<div class="actions" style="margin-top:10px"><button class="act session" onclick="window.location.href=\'shortcuts://run-shortcut?name=\'+encodeURIComponent(\'JB Invoice Mail\')">Compose email to Jules</button></div>';
+  })
+  .catch(function(){ setTimeout(invPoll,15000); });
 }
 function actStub(name, needs){
   alert(name+" is not wired up yet. It needs "+needs+".");
