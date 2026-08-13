@@ -213,7 +213,7 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
   <button class="tab" id="tab-mileage" onclick="switchTab('mileage')">Mileage</button>
   <button class="tab" id="tab-finance" onclick="switchTab('finance')">Finance</button>
   <button class="tab" id="tab-pending" onclick="switchTab('pending')">Pending<span class="pbadge" id="pbadge"></span></button>
-  <button class="tab" id="tab-map" onclick="switchTab('map')">Map</button>
+  <button class="tab" id="tab-actions" onclick="switchTab('actions')">Actions</button>
 </div></div>
 <div class="savebar"><span class="dot off" id="syncdot"></span><span id="savestate">Starting…</span></div>
 
@@ -269,13 +269,29 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 <div class="client-view" id="clientView"><div class="client-view-bar"><button class="cv-close" onclick="closeClientView()">‹ Done</button></div><iframe id="cvFrame" title="Client program"></iframe></div>
 
 
-<div class="view" id="view-map">
-  <div class="actbar" style="justify-content:space-between">
-    <span style="font-size:13px;color:var(--grey)">System map — fetched from private repo</span>
-    <button class="ghost" onclick="loadMap()">Refresh</button>
-  </div>
-  <div id="mapFrame" style="width:100%;border:none;padding:0;margin:0;min-height:calc(100vh - 120px)">
-    <div class="note" style="margin:24px 18px">Loading system map…</div>
+<div class="view" id="view-actions">
+  <div class="list" style="padding-top:16px">
+    <div class="client"><div class="client-row" style="cursor:default">
+      <div style="min-width:0"><div class="client-name">Close out day</div><div class="client-sub">Stage today + tomorrow from the Bakes calendar</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Close out day','the close-out Shortcut and Worker /day endpoint (build step 2)')">Run</button>
+    </div></div>
+    <div class="client"><div class="client-row" style="cursor:default">
+      <div style="min-width:0"><div class="client-name">Build invoice</div><div class="client-sub">Full-month class count &rarr; invoice &rarr; email to Jules</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Build invoice','the month-read Shortcut and Worker invoice build (build step 8)')">Run</button>
+    </div></div>
+    <div class="client" id="vatCard"><div class="client-row" style="cursor:default">
+      <div style="min-width:0"><div class="client-name">VAT check</div><div class="client-sub">Rolling 12-month taxable turnover vs the &pound;90k threshold</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="runVatCheck()">Run</button>
+    </div><div class="client-body" id="vatBody" style="display:none;padding-top:12px"><div id="vatResult"></div></div></div>
+    <div class="client"><div class="client-row" style="cursor:default">
+      <div style="min-width:0"><div class="client-name">Today refresh</div><div class="client-sub">Re-stage today.json for the dashboard order</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Today refresh','the close-out Shortcut and staged Worker data (build step 2)')">Run</button>
+    </div></div>
+    <div class="client"><div class="client-row" style="cursor:default">
+      <div style="min-width:0"><div class="client-name">Republish</div><div class="client-sub">Rebuild client pages via GitHub Actions, dry-run first</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Republish','the GitHub Actions workflow and deploy key (build step 5)')">Run</button>
+    </div></div>
+    <div class="note">Buttons marked as coming soon go live as each build step lands. VAT check runs now.</div>
   </div>
 </div>
 
@@ -398,18 +414,16 @@ function b64ToUtf8(b64){ var bin=atob(String(b64).replace(/\s/g,"")),a=new Uint8
 
 /* ---- tabs ---- */
 function switchTab(name){ activeTab=name;
-  ["sessions","mileage","finance","programs","pending","map"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); });
+  ["sessions","mileage","finance","programs","pending","actions"].forEach(function(t){ document.getElementById("view-"+t).classList.toggle("active",t===name); document.getElementById("tab-"+t).classList.toggle("active",t===name); });
   // sync bottom nav
-  ["sessions","mileage","finance","programs","pending","map"].forEach(function(t){
+  ["sessions","mileage","finance","programs","pending","actions"].forEach(function(t){
     var bn = document.getElementById("bn-"+t);
     if(bn) bn.classList.toggle("active", t===name);
   });
-  if(name==="map") loadMap();
-  document.getElementById("title").textContent = name==="sessions"?"Session Tracker":(name==="mileage"?"Mileage":(name==="finance"?"Finance":(name==="pending"?"Pending logs":(name==="map"?"System map":"Programs"))));
+  document.getElementById("title").textContent = name==="sessions"?"Session Tracker":(name==="mileage"?"Mileage":(name==="finance"?"Finance":(name==="pending"?"Pending logs":(name==="actions"?"Actions":"Programs"))));
   var ht=document.getElementById("headerTools"); if(ht) ht.style.display = (name==="programs")?"none":"";
   renderAll();
   if(name==="pending") loadPending();
-  if(name==="map") loadMap();
 }
 function renderAll(){ render(); renderMileage(); renderFinance(); renderPrograms(); }
 
@@ -1680,30 +1694,70 @@ setInterval(function(){ if(document.visibilityState==="visible") refreshBadge();
 document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); foregroundRefresh(); } else { osBadge(_pending.length); } });
 window.addEventListener("pagehide", function(){ osBadge(_pending.length); });
 
-/* ── System map tab ── */
-var mapLoaded = false;
-function loadMap(){
-  if(mapLoaded) return;
-  var tok = progToken();
-  if(!tok){ document.getElementById("mapFrame").innerHTML='<div class="note" style="margin:24px 18px">Set your GitHub token (Programs tab → GitHub token) to load the map.</div>'; return; }
-  document.getElementById("mapFrame").innerHTML='<div class="note" style="margin:24px 18px">Loading…</div>';
-  var url="https://api.github.com/repos/jbhealth/jb-health-data/contents/system-map.html?ref=main";
-  fetch(url,{headers:{"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}})
-    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
-    .then(function(d){
-      var raw=atob(d.content.replace(/\n/g,""));
-      var frame=document.getElementById("mapFrame");
-      frame.innerHTML="";
-      var iframe=document.createElement("iframe");
-      iframe.style.cssText="width:100%;height:calc(100vh - 120px);border:none;border-radius:8px;display:block;";
-      iframe.setAttribute("sandbox","allow-scripts allow-same-origin");
-      frame.appendChild(iframe);
-      iframe.srcdoc=raw;
-      mapLoaded=true;
-    })
-    .catch(function(e){
-      document.getElementById("mapFrame").innerHTML='<div class="note" style="margin:24px 18px">Could not load map ('+e.message+'). Check token has access to jb-health-data.</div>';
+/* ── Actions tab ── */
+function actStub(name, needs){
+  alert(name+" is not wired up yet. It needs "+needs+".");
+}
+
+/* VAT watch — JS port of masters/system/vat_watch.py (thresholds and rules mirrored).
+   Baseline months from jb-health-data/vat-baseline.json + Income txns from the synced
+   ledger. Only vatScope "outside_scope" is excluded; zero-rated still counts. */
+var VAT={THRESHOLD:90000,DEREG:88000,AMBER:72000,RED:80000};
+function vatPrevMonth(ym){var y=parseInt(ym.slice(0,4),10),m=parseInt(ym.slice(5,7),10)-1;if(m===0){y-=1;m=12;}return y+"-"+String(m).padStart(2,"0");}
+function vatNextMonth(ym){var y=parseInt(ym.slice(0,4),10),m=parseInt(ym.slice(5,7),10)+1;if(m===13){y+=1;m=1;}return y+"-"+String(m).padStart(2,"0");}
+function vatWindow(asof){var keys=[],cur=asof;for(var i=0;i<12;i++){keys.push(cur);cur=vatPrevMonth(cur);}return keys.reverse();}
+function vatGBP(n){return "\u00A3"+Math.round(n).toLocaleString("en-GB");}
+function runVatCheck(){
+  var body=document.getElementById("vatBody"),out=document.getElementById("vatResult");
+  body.style.display="block";
+  out.innerHTML='<div class="empty-hist">Checking\u2026</div>';
+  var tok=progToken();
+  if(!tok){out.innerHTML='<div class="empty-hist">Set your GitHub token first (Programs tab).</div>';return;}
+  fetch("https://api.github.com/repos/jbhealth/jb-health-data/contents/vat-baseline.json?ref=main",{headers:progHeaders()})
+  .then(function(r){if(!r.ok)throw new Error("baseline "+r.status);return r.json();})
+  .then(function(d){
+    var base=JSON.parse(atob(d.content.replace(/\n/g,"")));
+    var months={};
+    Object.keys(base.monthly_taxable_turnover||{}).forEach(function(ym){months[ym]=(months[ym]||0)+Number(base.monthly_taxable_turnover[ym]||0);});
+    var excluded=0;
+    (finance.txns||[]).forEach(function(t){
+      if(t.type!=="Income")return;
+      var amt=Number(t.amountPre||0)*Number(t.pct==null?100:t.pct)/100;
+      var ym=(t.date||"").slice(0,7);
+      if(!ym)return;
+      if(t.vatScope==="outside_scope"){excluded+=amt;return;}
+      months[ym]=(months[ym]||0)+amt;
     });
+    var now=new Date(),curYm=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+    var asof=vatPrevMonth(curYm),win=vatWindow(asof);
+    var rolling=win.reduce(function(s,k){return s+(months[k]||0);},0);
+    var recent=win.slice(-3).map(function(k){return months[k]||0;});
+    var nz=recent.filter(function(r){return r;}).length||1;
+    var runRate=recent.reduce(function(a,b){return a+b;},0)/nz;
+    var status,note,col;
+    if(rolling>=VAT.RED){status="RED";note="Decide now: cap hours or reposition prices.";col="var(--red)";}
+    else if(rolling>=VAT.AMBER){status="AMBER";note="Watch monthly. Plan the price and capacity call.";col="var(--amber)";}
+    else{status="GREEN";note="No action needed.";col="var(--green)";}
+    var crossing=null,proj=rolling,cur=asof;
+    for(var i=1;i<=36;i++){
+      cur=vatNextMonth(cur);
+      var oldest=vatWindow(cur)[0];
+      var dropped=(months[oldest]!==undefined)?months[oldest]:runRate;
+      proj=proj+runRate-dropped;
+      if(proj>VAT.THRESHOLD){crossing=cur;break;}
+    }
+    function row(l,v){return '<div class="mini-row"><span>'+l+'</span><span>'+v+'</span></div>';}
+    var html='<div style="font-weight:700;color:'+col+';font-size:15px;margin-bottom:6px">'+status+' \u2014 '+note+'</div>';
+    html+=row("Window",win[0]+" to "+win[11]);
+    html+=row("Taxable turnover",vatGBP(rolling));
+    html+=row("Threshold",vatGBP(VAT.THRESHOLD));
+    html+=row("Headroom",vatGBP(VAT.THRESHOLD-rolling));
+    html+=row("3-month run rate",vatGBP(runRate)+"/month");
+    if(excluded)html+=row("Excluded (out of scope)",vatGBP(excluded));
+    html+=row("Projected crossing",crossing||"not within 3 years at this rate");
+    out.innerHTML=html;
+  })
+  .catch(function(e){out.innerHTML='<div class="empty-hist">VAT check failed ('+e.message+'). Token needs jb-health-data access.</div>';});
 }
 
 </script>
@@ -1729,9 +1783,9 @@ function loadMap(){
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
     <span class="bn-label">Pending</span><span class="pbadge" id="pbadge-bn"></span>
   </button>
-  <button class="bn-tab" id="bn-map" onclick="switchTab('map')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
-    <span class="bn-label">Map</span>
+  <button class="bn-tab" id="bn-actions" onclick="switchTab('actions')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    <span class="bn-label">Actions</span>
   </button>
 </nav>
 
