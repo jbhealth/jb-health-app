@@ -283,19 +283,19 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
       <div style="min-width:0"><div class="client-name">VAT check</div><div class="client-sub">Rolling 12-month taxable turnover vs the &pound;90k threshold</div></div>
       <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();runVatCheck()">Run</button>
     </div><div class="client-body" id="vatBody" style="display:none;padding-top:12px"><div id="vatResult"></div></div></div>
-    <div class="client" id="todayCard"><div class="client-row" style="cursor:default">
+    <div class="client" id="todayCard"><div class="client-row" onclick="toggleActBody('todayBody','todayResult')">
       <div style="min-width:0"><div class="client-name">Today refresh</div><div class="client-sub">Build today.json from the staged calendar day</div></div>
       <div style="display:flex;gap:6px;flex:none">
-        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="loadStagedDay(0)">Today</button>
-        <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="loadStagedDay(1)">Tomorrow</button>
+        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();loadStagedDay(0)">Today</button>
+        <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();loadStagedDay(1)">Tomorrow</button>
       </div>
     </div><div class="client-body" id="todayBody" style="display:none;padding-top:12px"><div id="todayResult"></div></div></div>
-    <div class="client" id="repubCard"><div class="client-row" style="cursor:default">
+    <div class="client" id="repubCard"><div class="client-row" onclick="toggleActBody('repubBody','repubResult')">
       <div style="min-width:0"><div class="client-name">Republish</div><div class="client-sub">Rebuild client pages via GitHub Actions, dry-run first</div></div>
       <div style="display:flex;gap:6px;flex:none;flex-wrap:wrap">
-        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="repubStart('today')">Today</button>
-        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="repubStart('pick')">Pick</button>
-        <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="repubStart('all')">All</button>
+        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();repubStart('today')">Today</button>
+        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();repubStart('pick')">Pick</button>
+        <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();repubStart('all')">All</button>
       </div>
     </div><div class="client-body" id="repubBody" style="display:none;padding-top:12px"><div id="repubResult"></div></div></div>
     <div class="note">Close out day runs the JB Close Out Shortcut. VAT check and Today refresh are live. Build invoice and Republish arrive with later build steps.</div>
@@ -1933,11 +1933,12 @@ document.addEventListener("visibilitychange", function(){ if(document.visibility
 window.addEventListener("pagehide", function(){ osBadge(_pending.length); });
 
 /* ── Actions tab ── */
-function toggleVat(){
-  var body=document.getElementById("vatBody");
+function toggleActBody(bodyId,resId){
+  var body=document.getElementById(bodyId);
   if(body.style.display==="block"){ body.style.display="none"; }
-  else if(document.getElementById("vatResult").innerHTML){ body.style.display="block"; }
+  else if(document.getElementById(resId).innerHTML){ body.style.display="block"; }
 }
+function toggleVat(){ toggleActBody("vatBody","vatResult"); }
 /* ── Republish via GitHub Actions ──
    Dry-run first, always: dispatch push=false, poll the run, read the summary the
    workflow writes to masters (system/republish-last-run.json), show the rows,
@@ -1951,12 +1952,48 @@ function repubStart(scope){
     if(!s||!s.trim()) return;
     scope=s.replace(/\s+/g,"");
   }
+  if(scope==="today"){ repubResolveToday(); return; }
   var body=document.getElementById("repubBody"),out=document.getElementById("repubResult");
   body.style.display="block";
   if(!progToken()){ out.innerHTML='<div class="empty-hist">Set your GitHub token first (Programs tab).</div>'; return; }
   _repub={scope:scope,since:Math.floor(Date.now()/1000)-5,timer:null,phase:"dry"};
   out.innerHTML='<div class="empty-hist">Dispatching dry run for '+scope+'\u2026</div>';
   repubDispatch(false);
+}
+/* "Today" means the clients seen TODAY. today.json can't be trusted for that —
+   it's a rolling file that becomes tomorrow's the moment tomorrow is prepped.
+   So resolve today's codes from the staged Worker day + the on-device roster
+   map, and dispatch them as an explicit list. No staged day (or no admin
+   token) falls back to the today.json keyword. */
+function repubResolveToday(){
+  var body=document.getElementById("repubBody"),out=document.getElementById("repubResult");
+  body.style.display="block";
+  var at=adminTok();
+  function fallback(msg){
+    out.innerHTML='<div class="empty-hist">'+msg+' \u2014 using today.json instead.</div>';
+    _repub={scope:"today",since:Math.floor(Date.now()/1000)-5,timer:null,phase:"dry"};
+    setTimeout(function(){ repubDispatch(false); },600);
+  }
+  if(!at){ fallback("No admin token"); return; }
+  out.innerHTML='<div class="empty-hist">Reading today\u2019s staged sessions\u2026</div>';
+  fetch(WORKER+"/day?date="+stagedDateFor(0),{headers:{"x-jb-admin":at}})
+  .then(function(r){ return r.json(); })
+  .then(function(j){
+    if(!j.ok){ fallback("Nothing staged for today"); return; }
+    var map=rosterMap(), codes=[], unresolved=[];
+    j.day.events.forEach(function(ev){
+      if(!/^\[PT\]/i.test(ev.title)) return;
+      var nm=stagedName(ev.title), v=map[nm.toLowerCase()];
+      if(!v){ unresolved.push(nm); return; }
+      v.split(",").forEach(function(c){ if(c&&codes.indexOf(c)===-1) codes.push(c); });
+    });
+    if(!codes.length){ fallback("No resolvable clients staged"); return; }
+    var note=unresolved.length?(" ("+unresolved.join(", ")+" unresolved \u2014 teach them in Today refresh first)"):"";
+    out.innerHTML='<div class="empty-hist">Today = '+codes.join(", ")+note+'</div>';
+    _repub={scope:codes.join(","),since:Math.floor(Date.now()/1000)-5,timer:null,phase:"dry"};
+    setTimeout(function(){ repubDispatch(false); },600);
+  })
+  .catch(function(){ fallback("Worker unreachable"); });
 }
 function repubDispatch(push){
   var out=document.getElementById("repubResult");
