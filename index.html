@@ -271,34 +271,39 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 
 <div class="view" id="view-actions">
   <div class="list" style="padding-top:16px">
+    <div class="hist-label" style="margin:0 2px 8px">End of day, in order</div>
     <div class="client"><div class="client-row" style="cursor:default">
-      <div style="min-width:0"><div class="client-name">Close out day</div><div class="client-sub">Stage today + tomorrow from the Bakes calendar</div></div>
+      <div style="min-width:0"><div class="client-name">1 &middot; Close out day</div><div class="client-sub">Reads today + tomorrow from your calendar and banks them. Replaces the calendar read of the roundup.</div></div>
       <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="runCloseOut()">Run</button>
     </div></div>
     <div class="client"><div class="client-row" style="cursor:default">
-      <div style="min-width:0"><div class="client-name">Build invoice</div><div class="client-sub">Full-month class count &rarr; invoice &rarr; email to Jules</div></div>
-      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Build invoice','the month-read Shortcut and Worker invoice build (build step 8)')">Run</button>
+      <div style="min-width:0"><div class="client-name">2 &middot; Roundup</div><div class="client-sub">Payments, expenses, logs, cues, sign-off. For now: do this with Claude. The in-app chat lands here at build step 9.</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Roundup','the in-app chat (build step 9) \u2014 until then, run the roundup with Claude as usual')">Run</button>
     </div></div>
-    <div class="client" id="vatCard"><div class="client-row" onclick="toggleVat()">
-      <div style="min-width:0"><div class="client-name">VAT check</div><div class="client-sub">Rolling 12-month taxable turnover vs the &pound;90k threshold</div></div>
-      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();runVatCheck()">Run</button>
-    </div><div class="client-body" id="vatBody" style="display:none;padding-top:12px"><div id="vatResult"></div></div></div>
     <div class="client" id="todayCard"><div class="client-row" onclick="toggleActBody('todayBody','todayResult')">
-      <div style="min-width:0"><div class="client-name">Today refresh</div><div class="client-sub">Build today.json from the staged calendar day</div></div>
+      <div style="min-width:0"><div class="client-name">3 &middot; Tomorrow's order</div><div class="client-sub">Sets which clients top the dashboard tomorrow. Usually the banner does this for you; use these if it didn't.</div></div>
       <div style="display:flex;gap:6px;flex:none">
         <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();loadStagedDay(0)">Today</button>
         <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();loadStagedDay(1)">Tomorrow</button>
       </div>
     </div><div class="client-body" id="todayBody" style="display:none;padding-top:12px"><div id="todayResult"></div></div></div>
+    <div class="hist-label" style="margin:14px 2px 8px">Whenever needed</div>
     <div class="client" id="repubCard"><div class="client-row" onclick="toggleActBody('repubBody','repubResult')">
-      <div style="min-width:0"><div class="client-name">Republish</div><div class="client-sub">Rebuild client pages via GitHub Actions, dry-run first</div></div>
+      <div style="min-width:0"><div class="client-name">Republish</div><div class="client-sub">Makes your master edits live on client pages (weights, order, cues). Roundup does today's automatically; this is for in-between fixes.</div></div>
       <div style="display:flex;gap:6px;flex:none;flex-wrap:wrap">
         <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();repubStart('today')">Today</button>
         <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();repubStart('pick')">Pick</button>
         <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();repubStart('all')">All</button>
       </div>
     </div><div class="client-body" id="repubBody" style="display:none;padding-top:12px"><div id="repubResult"></div></div></div>
-    <div class="note">Close out day runs the JB Close Out Shortcut. VAT check and Today refresh are live. Build invoice and Republish arrive with later build steps.</div>
+    <div class="client"><div class="client-row" style="cursor:default">
+      <div style="min-width:0"><div class="client-name">Build invoice</div><div class="client-sub">Counts the month's classes and drafts the Combe Grove invoice + email to Jules. Month-end job.</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Build invoice','the month-read Shortcut and Worker invoice build (build step 8)')">Run</button>
+    </div></div>
+    <div class="client" id="vatCard"><div class="client-row" onclick="toggleVat()">
+      <div style="min-width:0"><div class="client-name">VAT check</div><div class="client-sub">Where your rolling 12-month turnover sits against the &pound;90k line. Glance monthly.</div></div>
+      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();runVatCheck()">Run</button>
+    </div><div class="client-body" id="vatBody" style="display:none;padding-top:12px"><div id="vatResult"></div></div></div>
   </div>
 </div>
 
@@ -379,6 +384,69 @@ function loadRoster(){
 /* --- Daily prep: optional today.json (public programs repo) lifts today's in-person
    clients into a Today group. In-person only; online is never on Bakes. --- */
 var TODAY_ORDER=null;
+/* Tomorrow banner: when tomorrow is staged, every name resolves from the learned
+   map, and today.json hasn't been pushed for tomorrow yet, offer a one-tap push.
+   Dismiss holds for that date. today.json is date-checked by every reader, so a
+   tomorrow-dated file is inert on the dashboard until midnight. */
+function maybeOfferTomorrow(){
+  try{
+    var at=adminTok(); if(!at||!progToken()) return;
+    var tmr=stagedDateFor(1);
+    if(lsGet("jbh_banner_done")===tmr) return;
+    fetch(WORKER+"/day?date="+tmr,{headers:{"x-jb-admin":at}})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if(!j.ok) return;
+      var map=rosterMap(), order=[], unresolved=0;
+      j.day.events.forEach(function(ev){
+        if(!/^\[PT\]/i.test(ev.title)) return;
+        var v=map[stagedName(ev.title).toLowerCase()];
+        if(!v){ unresolved++; return; }
+        v.split(",").forEach(function(c){ if(c) order.push({c:c,t:ev.start||""}); });
+      });
+      if(unresolved||!order.length) return;   /* manual flow teaches the gaps */
+      fetch("../programs/today.json?t="+Date.now(),{cache:"no-store"})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(cur){
+        if(cur&&cur.date===tmr) return;       /* already pushed */
+        order.sort(function(a,b){ return a.t.localeCompare(b.t); });
+        showTomorrowBanner(tmr,order);
+      });
+    }).catch(function(){});
+  }catch(e){}
+}
+function showTomorrowBanner(tmr,order){
+  if(document.getElementById("jbTmrBanner")) return;
+  var codes=[]; order.forEach(function(o){ if(codes.indexOf(o.c)===-1) codes.push(o.c); });
+  var b=document.createElement("div");
+  b.id="jbTmrBanner";
+  b.style.cssText="max-width:760px;margin:10px auto 0;padding:10px 14px;background:var(--accent);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--navy);flex-wrap:wrap;";
+  b.innerHTML='<span style="flex:1;min-width:160px"><b>Tomorrow ready:</b> '+codes.join(", ")+'</span>'
+    +'<button class="act session" style="flex:none;min-width:0;padding:8px 14px" id="jbTmrPush">Push order</button>'
+    +'<button class="act edit" style="flex:none;min-width:0;padding:8px 12px" id="jbTmrDismiss">Later</button>';
+  var anchor=document.querySelector(".savebar")||document.querySelector(".tabs");
+  if(anchor&&anchor.parentNode) anchor.parentNode.insertBefore(b,anchor.nextSibling); else document.body.insertBefore(b,document.body.firstChild);
+  document.getElementById("jbTmrDismiss").onclick=function(){ lsSet("jbh_banner_done",tmr); b.remove(); };
+  document.getElementById("jbTmrPush").onclick=function(){
+    var payload={date:tmr,order:order};
+    var api="https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.programs+"/contents/today.json";
+    b.innerHTML='<span>Pushing\u2026</span>';
+    fetch(api,{headers:progHeaders()})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(cur){
+      var body={message:"today.json for "+tmr+" (tomorrow banner)",
+        content:btoa(unescape(encodeURIComponent(JSON.stringify(payload,null,1))))};
+      if(cur&&cur.sha) body.sha=cur.sha;
+      return fetch(api,{method:"PUT",headers:progHeaders(),body:JSON.stringify(body)});
+    })
+    .then(function(r){ if(!r.ok) throw new Error(r.status);
+      lsSet("jbh_banner_done",tmr);
+      b.innerHTML='<span style="color:var(--green)">Tomorrow ordered \u2713</span>';
+      setTimeout(function(){ b.remove(); },2500);
+    })
+    .catch(function(e){ b.innerHTML='<span>Push failed ('+e.message+') \u2014 use Today refresh instead.</span>'; setTimeout(function(){ b.remove(); },4000); });
+  };
+}
 function loadToday(){
   try{
     fetch("../programs/today.json?t="+Date.now(),{cache:"no-store"})
@@ -1818,7 +1886,7 @@ window.addEventListener("popstate", function(){
 });
 function startup(){ loadCfg();
   try{ var c=lsGet("jbh_cache"); if(c) applyBundle(JSON.parse(c)); }catch(e){}
-  seedDefaults(); renderAll(); loadRoster(); loadToday(); dataLoaded=true; switchTab("programs"); _historyTrap();
+  seedDefaults(); renderAll(); loadRoster(); loadToday(); maybeOfferTomorrow(); dataLoaded=true; switchTab("programs"); _historyTrap();
   if(ghConfigured()){ setSave("","Connected — pulling latest\u2026"); pullFromGitHub(); }
   else { setSave("","Saved on this device. Tap Sync to enable phone\u2194PC sync."); }
 }
@@ -2050,8 +2118,8 @@ function runCloseOut(){
    date, resolves calendar names to codes via a map that lives ONLY in this device's
    localStorage (jbh_roster) — the public app file carries no names, and the map
    teaches itself: any name you resolve by hand once is remembered. */
-function rosterMap(){ try{ return JSON.parse(lsGet("jbh_roster")||"{}"); }catch(e){ return {}; } }
-function rosterSave(m){ lsSet("jbh_roster", JSON.stringify(m)); }
+function rosterMap(){ try{ return JSON.parse(lsGet("jbh_namemap")||"{}"); }catch(e){ return {}; } }
+function rosterSave(m){ lsSet("jbh_namemap", JSON.stringify(m)); }
 function stagedDateFor(offset){
   var d=new Date(); d.setDate(d.getDate()+offset);
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
