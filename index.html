@@ -1375,7 +1375,8 @@ function editSig(htmlStr){
     var nm=val(card.querySelector(".ex-name-input, .ex-name"));
     var st=val(card.querySelector(".badge-input, .badge-sets"));
     var nt=val(card.querySelector(".trainer-note-input"));
-    sig.push(nm.trim()+"|"+st.trim()+"|"+nt.trim());
+    var cu=val(card.querySelector(".client-cue-input"));
+    sig.push(nm.trim()+"|"+st.trim()+"|"+nt.trim()+"|"+cu.trim());
   });
   d.querySelectorAll(".session-note-input").forEach(function(s){ sig.push("S|"+val(s).trim()); });
   return sig.join("~~");
@@ -1480,10 +1481,10 @@ function loadMasterIntoFrame(mhtml, code){
   fr.onload=function(){
     try{
       var doc=fr.contentDocument;
-      if(!doc.getElementById("jbAppInjectCSS")){ var st=doc.createElement("style"); st.id="jbAppInjectCSS"; st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.exercise-card{margin-left:38px!important;}.trainer-note-input,.session-note-input{overflow:hidden;line-height:1.5;min-height:46px;}.jb-foot{margin:24px 20px calc(28px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:var(--grey);}.jb-foot a{color:var(--blue);text-decoration:none;font-weight:600;}"; doc.head.appendChild(st); }
+      if(!doc.getElementById("jbAppInjectCSS")){ var st=doc.createElement("style"); st.id="jbAppInjectCSS"; st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.trainer-note-input,.session-note-input,.client-cue-input{overflow:hidden;line-height:1.5;min-height:46px;}.client-cue-wrap{margin-top:10px;}.client-cue-label{font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#2E86C1;margin-bottom:4px;}.client-cue-input{width:100%;box-sizing:border-box;border:1px solid #D4E4F0;border-radius:6px;font-size:12px;padding:6px;font-family:inherit;background:#F4FAFE;}.client-cue-wrap.jb-cue-hidden{display:none;}.jb-cue-btn{margin-top:8px;background:transparent;border:1px dashed #2E86C1;color:#2E86C1;border-radius:14px;padding:4px 11px;font-size:11px;cursor:pointer;}.jb-foot{margin:24px 20px calc(28px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:var(--grey);}.jb-foot a{color:var(--blue);text-decoration:none;font-weight:600;}"; doc.head.appendChild(st); }
       if(doc.body && !doc.querySelector(".jb-foot")){ var ft=doc.createElement("div"); ft.className="jb-foot"; ft.setAttribute("data-appinject","1"); ft.innerHTML='JB Health \u00b7 <a href="https://jbhealth.co.uk" target="_blank" rel="noopener">jbhealth.co.uk</a>'; doc.body.appendChild(ft); }
       try{ var _grow=function(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; };
-        Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ _grow(t); t.addEventListener("input", function(){ _grow(t); }); }); }catch(e){}
+        Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input,.client-cue-input"), function(t){ _grow(t); t.addEventListener("input", function(){ _grow(t); }); }); }catch(e){}
       try{ enhanceEditor(doc); }catch(e){}
       doc.addEventListener("input", function(){ scheduleDraft(code); }, true);
       doc.addEventListener("click", function(){ scheduleDraft(code); }, true);
@@ -1534,13 +1535,30 @@ function enhanceEditor(doc){
   Array.prototype.forEach.call(doc.querySelectorAll(".badge-weight.placeholder"),function(p){
     if(!p.textContent.trim()) p.textContent="weight";
   });
+  /* Client cue box: organic migration. Any BUILT card without one gains an empty
+     cue box that PERSISTS on export (deliberately not data-appinject), so masters
+     pick the field up as they're opened. Archive content and the protected
+     data-static panel are never touched. */
+  Array.prototype.forEach.call(doc.querySelectorAll(".exercise-card"),function(card){
+    if(card.querySelector(".client-cue-wrap")) return;
+    if(!card.querySelector(".ex-name")) return;                      /* stubs stay stubs */
+    if(card.closest("[data-static]")) return;                        /* LS static: verbatim, always */
+    if(card.closest(".archive-month")||card.closest(".archive-tab")) return;
+    var w=doc.createElement("div");
+    w.className="client-cue-wrap";
+    var did=card.getAttribute("data-id")||"";
+    w.innerHTML='<div class="client-cue-label">Client cue</div>'
+      +'<textarea class="client-cue-input" data-key="'+(did?did+"-cue":"cue")+'" placeholder="Shown on their page" style=""></textarea>';
+    card.appendChild(w);
+  });
+  decorateCueWraps(doc,doc);
   function addArrows(card){
     if(card.querySelector(".jb-arr")) return;
     ["\u25B2","\u25BC"].forEach(function(ch,down){
       var b=doc.createElement("button");
       b.className="jb-arr"; b.setAttribute("data-appinject","1"); b.type="button";
       b.textContent=ch;
-      b.style.cssText="position:absolute;left:-38px;top:"+(down?40:8)+"px;width:30px;height:26px;border:1px solid var(--border,#D4E4F0);background:#fff;color:var(--blue,#2E86C1);border-radius:7px;font-size:11px;cursor:pointer;padding:0;line-height:1;";
+      b.style.cssText="position:absolute;left:8px;top:"+(down?52:22)+"px;width:30px;height:26px;border:1px solid var(--border,#D4E4F0);background:#fff;color:var(--blue,#2E86C1);border-radius:7px;font-size:11px;cursor:pointer;padding:0;line-height:1;";
       b.onclick=function(ev){
         ev.preventDefault();
         var sib=card, hop=null;
@@ -1560,7 +1578,8 @@ function enhanceEditor(doc){
   new (fr_win(doc).MutationObserver||MutationObserver)(function(muts){
     muts.forEach(function(m){ Array.prototype.forEach.call(m.addedNodes,function(n){
       if(n.nodeType===1){ if(n.classList&&n.classList.contains("exercise-card")) addArrows(n);
-        if(n.querySelectorAll) Array.prototype.forEach.call(n.querySelectorAll(".exercise-card"),addArrows); }
+        if(n.querySelectorAll){ Array.prototype.forEach.call(n.querySelectorAll(".exercise-card"),addArrows);
+          try{ decorateCueWraps(doc,n.parentNode||doc); }catch(e){} } }
     });});
   }).observe(doc.body,{childList:true,subtree:true});
   /* name picker: delegated so cards added later work too */
@@ -1626,6 +1645,8 @@ function enhanceEditor(doc){
         +"<p><strong>Focus:</strong> "+_escH(d.focus)+"</p>"+gl+"</div>\n"
         +'      <div class="trainer-notes-wrap"><div class="trainer-notes-label">Trainer Notes</div>'
         +'<textarea class="trainer-note-input" data-key="'+dataId+'-note" placeholder="Notes..." style=""></textarea></div>\n'
+        +'      <div class="client-cue-wrap"><div class="client-cue-label">Client cue</div>'
+        +'<textarea class="client-cue-input" data-key="'+dataId+'-cue" placeholder="Shown on their page" style=""></textarea></div>\n'
         +"    </div>";
       var tmp=doc.createElement("div");
       tmp.innerHTML=cardHtml;
@@ -1636,6 +1657,7 @@ function enhanceEditor(doc){
       newCard.classList.remove("collapsed");   /* expanded for the session; applyCues resets on every load */
       try{ fr_win(doc).initCues(); }catch(err){}
       try{ fr_win(doc)._enhanceCards(); }catch(err){}
+      try{ decorateCueWraps(doc,newCard.parentNode); }catch(err){}
       try{ doc.dispatchEvent(new (fr_win(doc).Event||Event)("input",{bubbles:true})); }catch(err){}
       newCard.scrollIntoView({block:"nearest",behavior:"smooth"});
       return true;
@@ -1675,15 +1697,34 @@ function enhanceEditor(doc){
     if(ev.target===curInput) setTimeout(hideDD,150);
   },true);
 }
+function decorateCueWraps(doc,root){
+  /* Empty cue boxes hide behind a small "+ Client cue" link so cards stay clean;
+     filled cues always show. Hide class + link are stripped on export, so the
+     file keeps the plain empty wrap and stays byte-identical to the builders. */
+  Array.prototype.forEach.call(root.querySelectorAll(".client-cue-wrap"),function(w){
+    if(w.classList.contains("jb-cue-hidden")) return;
+    if(w.previousElementSibling&&w.previousElementSibling.classList&&w.previousElementSibling.classList.contains("jb-cue-btn")) return;
+    var ta=w.querySelector(".client-cue-input");
+    if(!ta||ta.value.trim()) return;
+    w.classList.add("jb-cue-hidden");
+    var b=doc.createElement("button");
+    b.type="button"; b.className="jb-cue-btn"; b.setAttribute("data-appinject","1");
+    b.textContent="+ Client cue";
+    b.onclick=function(ev){ ev.preventDefault();
+      w.classList.remove("jb-cue-hidden"); b.remove(); try{ ta.focus(); }catch(e){} };
+    w.parentNode.insertBefore(b,w);
+  });
+}
 function fr_win(doc){ return doc.defaultView||window; }
 function stripAppInject(root){ try{
   var q=function(sel){ return root.querySelectorAll?root.querySelectorAll(sel):[]; };
   Array.prototype.forEach.call(q("#jbAppInjectCSS"), function(n){ n.remove(); });
   Array.prototype.forEach.call(q("[data-appinject]"), function(n){ n.remove(); });
-  Array.prototype.forEach.call(q(".trainer-note-input,.session-note-input"), function(t){ t.style.removeProperty("height"); });
+  Array.prototype.forEach.call(q(".trainer-note-input,.session-note-input,.client-cue-input"), function(t){ t.style.removeProperty("height"); });
   /* placeholder weight pills export EMPTY so build_client never reads the word
      "weight" as a load; the in-session "weight" tap-target text is display-only */
   Array.prototype.forEach.call(q(".badge-weight.placeholder"), function(p){ p.textContent=""; });
+  Array.prototype.forEach.call(q(".client-cue-wrap.jb-cue-hidden"), function(w){ w.classList.remove("jb-cue-hidden"); });
 }catch(e){} }
 /* Serialise the master WITHOUT mutating the live editor: bake (live, harmless),
    then clone, strip the clone, and read the clone. Fixes injected UI (arrows,
