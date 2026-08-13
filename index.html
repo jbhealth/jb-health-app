@@ -1480,7 +1480,7 @@ function loadMasterIntoFrame(mhtml, code){
   fr.onload=function(){
     try{
       var doc=fr.contentDocument;
-      if(!doc.getElementById("jbAppInjectCSS")){ var st=doc.createElement("style"); st.id="jbAppInjectCSS"; st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.trainer-note-input,.session-note-input{overflow:hidden;line-height:1.5;min-height:46px;}.jb-foot{margin:24px 20px calc(28px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:var(--grey);}.jb-foot a{color:var(--blue);text-decoration:none;font-weight:600;}"; doc.head.appendChild(st); }
+      if(!doc.getElementById("jbAppInjectCSS")){ var st=doc.createElement("style"); st.id="jbAppInjectCSS"; st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.exercise-card{margin-left:38px!important;}.trainer-note-input,.session-note-input{overflow:hidden;line-height:1.5;min-height:46px;}.jb-foot{margin:24px 20px calc(28px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:var(--grey);}.jb-foot a{color:var(--blue);text-decoration:none;font-weight:600;}"; doc.head.appendChild(st); }
       if(doc.body && !doc.querySelector(".jb-foot")){ var ft=doc.createElement("div"); ft.className="jb-foot"; ft.setAttribute("data-appinject","1"); ft.innerHTML='JB Health \u00b7 <a href="https://jbhealth.co.uk" target="_blank" rel="noopener">jbhealth.co.uk</a>'; doc.body.appendChild(ft); }
       try{ var _grow=function(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; };
         Array.prototype.forEach.call(doc.querySelectorAll(".trainer-note-input,.session-note-input"), function(t){ _grow(t); t.addEventListener("input", function(){ _grow(t); }); }); }catch(e){}
@@ -1540,7 +1540,7 @@ function enhanceEditor(doc){
       var b=doc.createElement("button");
       b.className="jb-arr"; b.setAttribute("data-appinject","1"); b.type="button";
       b.textContent=ch;
-      b.style.cssText="position:absolute;left:8px;top:"+(down?52:22)+"px;width:30px;height:26px;border:1px solid var(--border,#D4E4F0);background:#fff;color:var(--blue,#2E86C1);border-radius:7px;font-size:11px;cursor:pointer;padding:0;line-height:1;";
+      b.style.cssText="position:absolute;left:-38px;top:"+(down?40:8)+"px;width:30px;height:26px;border:1px solid var(--border,#D4E4F0);background:#fff;color:var(--blue,#2E86C1);border-radius:7px;font-size:11px;cursor:pointer;padding:0;line-height:1;";
       b.onclick=function(ev){
         ev.preventDefault();
         var sib=card, hop=null;
