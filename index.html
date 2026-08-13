@@ -1745,11 +1745,16 @@ function renderStagedDay(){
   if(!pts.length){ out.innerHTML='<div class="empty-hist">No [PT] events staged for '+_staged.date+'.</div>'; return; }
   var html='<div class="hist-label">'+_staged.date+' \u2014 pick a code for anything unresolved</div>';
   pts.forEach(function(ev,i){
-    var nm=stagedName(ev.title), known=map[nm.toLowerCase()]||"";
-    var opts='<option value="">\u2014</option><option value="__skip">skip</option>';
-    codes.forEach(function(c){ opts+='<option value="'+c+'"'+(c===known?' selected':'')+'>'+c+'</option>'; });
+    var nm=stagedName(ev.title), knownRaw=map[nm.toLowerCase()]||"", parts=knownRaw.split(","),
+        known=parts[0]||"", known2=parts[1]||"";
+    function sel(cls, cur, first){
+      var o='<option value="">'+(first?"\u2014":"+")+'</option>';
+      if(first) o+='<option value="__skip">skip</option>';
+      codes.forEach(function(c){ o+='<option value="'+c+'"'+(c===cur?' selected':'')+'>'+c+'</option>'; });
+      return '<select class="'+cls+'" data-name="'+nm.replace(/"/g,"&quot;")+'" style="border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px">'+o+'</select>';
+    }
     html+='<div class="entry"><div class="entry-main"><span class="entry-meta">'+(ev.start||"?")+'</span> <b>'+nm+'</b></div>'
-        +'<select class="stg-code" data-name="'+nm.replace(/"/g,"&quot;")+'" style="border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px">'+opts+'</select></div>';
+        +'<div style="display:flex;gap:5px;flex:none">'+sel("stg-code",known,true)+sel("stg-code2",known2,false)+'</div></div>';
   });
   html+='<div class="actions" style="margin-top:12px"><button class="act session" onclick="pushTodayJson()">Push today.json</button></div>';
   out.innerHTML=html;
@@ -1758,12 +1763,14 @@ function pushTodayJson(){
   var out=document.getElementById("todayResult"), map=rosterMap();
   var sels=out.querySelectorAll("select.stg-code"), order=[], unresolved=[];
   var pts=_staged.events.filter(function(ev){ return /^\[PT\]/i.test(ev.title); });
+  var sels2=out.querySelectorAll("select.stg-code2");
   sels.forEach(function(s,i){
-    var code=s.value, nm=s.getAttribute("data-name");
+    var code=s.value, nm=s.getAttribute("data-name"), code2=(sels2[i]&&sels2[i].value)||"";
     if(code==="__skip") return;
     if(!code){ unresolved.push(nm); return; }
-    map[nm.toLowerCase()]=code;
+    map[nm.toLowerCase()]=code2?(code+","+code2):code;
     order.push({c:code,t:pts[i].start||""});
+    if(code2&&code2!==code) order.push({c:code2,t:pts[i].start||""});
   });
   if(unresolved.length){ alert("Pick a code (or skip) for: "+unresolved.join(", ")); return; }
   if(!order.length){ alert("Nothing to push."); return; }
