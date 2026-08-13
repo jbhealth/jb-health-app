@@ -290,10 +290,14 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
         <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="loadStagedDay(1)">Tomorrow</button>
       </div>
     </div><div class="client-body" id="todayBody" style="display:none;padding-top:12px"><div id="todayResult"></div></div></div>
-    <div class="client"><div class="client-row" style="cursor:default">
+    <div class="client" id="repubCard"><div class="client-row" style="cursor:default">
       <div style="min-width:0"><div class="client-name">Republish</div><div class="client-sub">Rebuild client pages via GitHub Actions, dry-run first</div></div>
-      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="actStub('Republish','the GitHub Actions workflow and deploy key (build step 5)')">Run</button>
-    </div></div>
+      <div style="display:flex;gap:6px;flex:none;flex-wrap:wrap">
+        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="repubStart('today')">Today</button>
+        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="repubStart('pick')">Pick</button>
+        <button class="act session" style="flex:none;min-width:0;padding:10px 12px" onclick="repubStart('all')">All</button>
+      </div>
+    </div><div class="client-body" id="repubBody" style="display:none;padding-top:12px"><div id="repubResult"></div></div></div>
     <div class="note">Close out day runs the JB Close Out Shortcut. VAT check and Today refresh are live. Build invoice and Republish arrive with later build steps.</div>
   </div>
 </div>
@@ -1933,6 +1937,70 @@ function toggleVat(){
   var body=document.getElementById("vatBody");
   if(body.style.display==="block"){ body.style.display="none"; }
   else if(document.getElementById("vatResult").innerHTML){ body.style.display="block"; }
+}
+/* ── Republish via GitHub Actions ──
+   Dry-run first, always: dispatch push=false, poll the run, read the summary the
+   workflow writes to masters (system/republish-last-run.json), show the rows,
+   then a second explicit tap dispatches push=true. Dispatch/poll need the PAT to
+   carry Actions read+write on masters. */
+var _repub={scope:null,since:0,timer:null,phase:null};
+function repubApi(p){ return "https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+p; }
+function repubStart(scope){
+  if(scope==="pick"){
+    var s=prompt("Client codes, comma separated (e.g. AB,KB):","");
+    if(!s||!s.trim()) return;
+    scope=s.replace(/\s+/g,"");
+  }
+  var body=document.getElementById("repubBody"),out=document.getElementById("repubResult");
+  body.style.display="block";
+  if(!progToken()){ out.innerHTML='<div class="empty-hist">Set your GitHub token first (Programs tab).</div>'; return; }
+  _repub={scope:scope,since:Math.floor(Date.now()/1000)-5,timer:null,phase:"dry"};
+  out.innerHTML='<div class="empty-hist">Dispatching dry run for '+scope+'\u2026</div>';
+  repubDispatch(false);
+}
+function repubDispatch(push){
+  var out=document.getElementById("repubResult");
+  fetch(repubApi("/actions/workflows/republish.yml/dispatches"),{
+    method:"POST",headers:progHeaders(),
+    body:JSON.stringify({ref:PCFG.branch,inputs:{clients:_repub.scope,push:push?"true":"false"}})})
+  .then(function(r){
+    if(r.status===404||r.status===403) throw new Error("dispatch "+r.status+" \u2014 your token needs Actions read/write on masters (add it at next weekly regen)");
+    if(!r.ok&&r.status!==204) throw new Error("dispatch "+r.status);
+    _repub.phase=push?"push":"dry";
+    out.innerHTML='<div class="empty-hist">'+(push?"Publishing":"Dry run building")+' \u2014 this takes a minute or two\u2026</div>';
+    _repub.since=Math.floor(Date.now()/1000)-5;
+    if(_repub.timer) clearTimeout(_repub.timer);
+    _repub.timer=setTimeout(repubPoll,15000);
+  })
+  .catch(function(e){ out.innerHTML='<div class="empty-hist">'+e.message+'</div>'; });
+}
+function repubPoll(){
+  var out=document.getElementById("repubResult");
+  fetch(repubApi("/contents/system/republish-last-run.json?ref="+PCFG.branch+"&t="+Date.now()),{headers:progHeaders()})
+  .then(function(r){ if(!r.ok) throw new Error("no summary yet"); return r.json(); })
+  .then(function(d){
+    var res=JSON.parse(b64ToUtf8(d.content));
+    if(res.ts<_repub.since) throw new Error("stale");
+    renderRepub(res);
+  })
+  .catch(function(){ _repub.timer=setTimeout(repubPoll,15000); });
+}
+function renderRepub(res){
+  var out=document.getElementById("repubResult");
+  var html='<div class="hist-label">'+(res.pushed?"Published":"Dry run")+' \u2014 '+res.staged+' page(s) staged</div>';
+  var bad=0;
+  (res.rows||[]).forEach(function(r){
+    var col=(r.status.indexOf("FAIL")===0||r.status==="SKIP")?"var(--red)":"var(--green)";
+    if(col==="var(--red)") bad++;
+    html+='<div class="mini-row"><span>'+r.client+' <span style="color:'+col+'">'+r.status+'</span></span><span style="color:var(--grey);font-size:11px">'+(r.note||"")+"</span></div>";
+  });
+  if(res.pushed){
+    html+='<div class="empty-hist" style="color:var(--green);margin-top:8px">Published \u2713</div>';
+  } else {
+    html+='<div class="actions" style="margin-top:12px"><button class="act session" onclick="repubDispatch(true)">Push '+res.staged+' page(s)</button></div>';
+    if(bad) html+='<div class="empty-hist">'+bad+' client(s) need attention \u2014 they are skipped, never pushed broken.</div>';
+  }
+  out.innerHTML=html;
 }
 function actStub(name, needs){
   alert(name+" is not wired up yet. It needs "+needs+".");
