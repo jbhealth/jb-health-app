@@ -2273,7 +2273,7 @@ function repubPreview(client){
   .then(function(d){
     var html=b64ToUtf8(d.content);
     html=html.replace(/<head([^>]*)>/i,'<head$1><base href="https://jbhealth.github.io/programs/">');
-    var u=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+    var u=URL.createObjectURL(new Blob([html],{type:"text/html;charset=utf-8"}));
     var w=window.open(u,"_blank");
     if(!w) window.location.href=u;
     setTimeout(function(){ URL.revokeObjectURL(u); },60000);
@@ -2450,7 +2450,7 @@ function invView(){
     rows+='<tr'+(n%2?' class="alt"':'')+'><td>'+n+'</td><td>'+wd[dt.getUTCDay()]+' '+(+p[2])+' '+mons[dt.getUTCMonth()].slice(0,3)+'</td><td>'+c[1]+'</td><td class="r">\u00a330</td></tr>';
   });
   var total=_inv.classes.length*30;
-  var html='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+  var html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     +'<style>body{font-family:Arial,sans-serif;color:#1A1A1A;margin:0;padding:0;background:#f2f5f8}'
     +'.page{max-width:640px;margin:0 auto;background:#fff;padding:22px 20px 30px}'
     +'.hdr{background:#1B3F6B;color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center}'
@@ -2476,7 +2476,7 @@ function invView(){
     +'<div class="note">Preview rendered from the build data \u2014 the file Jules receives is the Word original with identical contents.</div>'
     +'<script>fetch("'+WORKER+'/invoice?ym='+encodeURIComponent(_inv.ym)+'",{headers:{"x-jb-admin":"'+(adminTok()||"")+'"}}).then(function(r){document.getElementById("att").textContent=r.ok?"Attachment ready for the Mail Shortcut \u2713":"Attachment NOT on the Worker \u2014 the email leg will find nothing (the filed copy in the repo is safe).";document.getElementById("att").style.background=r.ok?"#E8F5E9":"#FDECEA";}).catch(function(){document.getElementById("att").textContent="Couldn\u2019t check the attachment.";});<\/script>'
     +'</div></body></html>';
-  var u=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+  var u=URL.createObjectURL(new Blob([html],{type:"text/html;charset=utf-8"}));
   var w=window.open(u,"_blank");
   if(!w) window.location.href=u;
   setTimeout(function(){ URL.revokeObjectURL(u); },120000);
