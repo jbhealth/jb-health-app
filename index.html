@@ -2136,6 +2136,10 @@ function repubResolveToday(){
   })
   .catch(function(){ fallback("Worker unreachable"); });
 }
+function repubStatus(msg,sub){
+  var out=document.getElementById("repubResult");
+  out.innerHTML='<div class="empty-hist">'+msg+'</div>'+(sub?'<div class="empty-hist" style="font-size:11px">'+sub+'</div>':'');
+}
 function repubDispatch(push){
   var out=document.getElementById("repubResult");
   fetch(repubApi("/actions/workflows/republish.yml/dispatches"),{
@@ -2145,13 +2149,53 @@ function repubDispatch(push){
     if(r.status===404||r.status===403) throw new Error("dispatch "+r.status+" \u2014 your token needs Actions read/write on masters (add it at next weekly regen)");
     if(!r.ok&&r.status!==204) throw new Error("dispatch "+r.status);
     _repub.phase=push?"push":"dry";
-    out.innerHTML='<div class="empty-hist">'+(push?"Publishing":"Dry run building")+' \u2014 this takes a minute or two\u2026</div>';
     _repub.since=Math.floor(Date.now()/1000)-5;
+    _repub.dispatchedAt=new Date(Date.now()-8000).toISOString();
+    _repub.runId=null;
     _repub.tries=0;
+    repubStatus((push?"Publishing":"Dry run")+" sent to GitHub \u2014 waiting for the runner\u2026");
     if(_repub.timer) clearTimeout(_repub.timer);
-    _repub.timer=setTimeout(repubPoll,15000);
+    _repub.timer=setTimeout(repubWatch,6000);
   })
   .catch(function(e){ out.innerHTML='<div class="empty-hist">'+e.message+'</div>'; });
+}
+/* narrate the real run, then read the summary it writes */
+function repubWatch(){
+  _repub.tries=(_repub.tries||0)+1;
+  if(_repub.tries>60){ repubStatus('<span style="color:var(--red)">No result after 6 minutes \u2014 the run likely failed.</span>',"Check masters \u2192 Actions for the red run."); return; }
+  if(!_repub.runId){
+    fetch(repubApi("/actions/workflows/republish.yml/runs?per_page=3&created=>"+encodeURIComponent(_repub.dispatchedAt)),{headers:progHeaders()})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      var run=(j.workflow_runs||[])[0];
+      if(run){ _repub.runId=run.id; repubStatus("Runner picked it up\u2026"); }
+      _repub.timer=setTimeout(repubWatch,6000);
+    })
+    .catch(function(){ _repub.timer=setTimeout(repubWatch,6000); });
+    return;
+  }
+  fetch(repubApi("/actions/runs/"+_repub.runId+"/jobs"),{headers:progHeaders()})
+  .then(function(r){ return r.json(); })
+  .then(function(j){
+    var job=(j.jobs||[])[0];
+    if(!job){ _repub.timer=setTimeout(repubWatch,6000); return; }
+    if(job.status!=="completed"){
+      var cur=null;
+      (job.steps||[]).forEach(function(s){ if(s.status==="in_progress") cur=s.name; });
+      var label={"Set up job":"Starting the runner\u2026",
+        "Run actions/checkout@v4":"Fetching the system\u2026",
+        "Run actions/setup-python@v5":"Preparing tools\u2026",
+        "Run republish":"Building pages \u2014 checks running\u2026"}[cur]||(cur?cur+"\u2026":"Running\u2026");
+      repubStatus(label,"Step "+((job.steps||[]).filter(function(s){return s.status==="completed";}).length)+" of 4"+(_repub.phase==="push"?" \u00b7 publishing":" \u00b7 dry run"));
+      _repub.timer=setTimeout(repubWatch,6000);
+      return;
+    }
+    /* completed: success or failure, the summary now carries the story */
+    _repub.tries=0;
+    if(job.conclusion!=="success") repubStatus('<span style="color:var(--red)">Run failed \u2014 fetching the reason\u2026</span>');
+    _repub.timer=setTimeout(repubPoll,4000);
+  })
+  .catch(function(){ _repub.timer=setTimeout(repubWatch,6000); });
 }
 function repubPoll(){
   var out=document.getElementById("repubResult");
