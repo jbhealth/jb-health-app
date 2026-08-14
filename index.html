@@ -2321,6 +2321,24 @@ function invWatch(){
   })
   .catch(function(){ setTimeout(invWatch,6000); });
 }
+function invView(){
+  /* fetch the deposited docx with the admin header and hand it to the system
+     viewer — a plain link can't carry the header. Opens outside the card. */
+  var at=adminTok();
+  if(!at){ alert("Set the endpoint token first (Pending tab)."); return; }
+  fetch(WORKER+"/invoice?ym="+encodeURIComponent(_inv.ym||""),{headers:{"x-jb-admin":at}})
+  .then(function(r){
+    if(!r.ok) throw new Error(r.status===404?"No copy on the Worker \u2014 the deposit leg didn\u2019t land; the filed copy is in jb-health-data.":"fetch "+r.status);
+    return r.blob();
+  })
+  .then(function(b){
+    var u=URL.createObjectURL(b.slice(0,b.size,"application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+    var w=window.open(u,"_blank");
+    if(!w) window.location.href=u;
+    setTimeout(function(){ URL.revokeObjectURL(u); },60000);
+  })
+  .catch(function(e){ alert("Couldn\u2019t open the invoice: "+e.message); });
+}
 function invPoll(){
   var out=document.getElementById("invResult");
   _inv.tries=(_inv.tries||0)+1;
@@ -2336,7 +2354,9 @@ function invPoll(){
     if(res.ts<_inv.since||res.ym!==_inv.ym) throw new Error("stale");
     if(res.status==="error"){ out.innerHTML='<div class="empty-hist">Build failed on the runner:</div><div class="mini-row" style="white-space:pre-wrap;font-size:10.5px;color:var(--red)">'+esc(res.error||"unknown")+'</div>'; return; }
     out.innerHTML='<div class="empty-hist" style="color:var(--green)">'+res.filename+' filed \u2713</div>'
-      +'<div class="actions" style="margin-top:10px"><button class="act session" onclick="window.location.href=\'shortcuts://run-shortcut?name=\'+encodeURIComponent(\'JB Invoice Mail\')">Compose email to Jules</button></div>';
+      +'<div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="act edit" onclick="invView()">Read invoice</button>'
+      +'<button class="act session" onclick="window.location.href=\'shortcuts://run-shortcut?name=\'+encodeURIComponent(\'JB Invoice Mail\')">Compose email to Jules</button></div>';
   })
   .catch(function(e){ if(String(e.message).indexOf("stale")<0&&String(e.message).indexOf("wait")<0){} setTimeout(invPoll,15000); });
 }
