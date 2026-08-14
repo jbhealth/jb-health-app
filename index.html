@@ -1631,7 +1631,7 @@ function enhanceEditor(doc){
       var b=doc.createElement("button");
       b.className="jb-arr"; b.setAttribute("data-appinject","1"); b.type="button";
       b.textContent=ch;
-      b.style.cssText="position:absolute;left:8px;top:"+(down?52:22)+"px;width:30px;height:26px;border:1px solid var(--border,#D4E4F0);background:#fff;color:var(--blue,#2E86C1);border-radius:7px;font-size:11px;cursor:pointer;padding:0;line-height:1;";
+      b.style.cssText="position:absolute;left:-36px;top:"+(down?50:20)+"px;width:30px;height:26px;border:1px solid var(--border,#D4E4F0);background:#fff;color:var(--blue,#2E86C1);border-radius:7px;font-size:12px;cursor:pointer;padding:0;line-height:1;box-shadow:0 1px 2px rgba(27,63,107,.08);";
       b.onclick=function(ev){
         ev.preventDefault();
         var sib=card, hop=null;
@@ -1646,6 +1646,13 @@ function enhanceEditor(doc){
       };
       card.appendChild(b);
     });
+  }
+  /* gutter so the arrows sit OUTSIDE the card's left edge (stripped on export) */
+  if(!doc.getElementById("jbArrGutter")){
+    var gs=doc.createElement("style");
+    gs.id="jbArrGutter"; gs.setAttribute("data-appinject","1");
+    gs.textContent=".exercise-card{margin-left:38px !important;position:relative;}";
+    (doc.head||doc.body).appendChild(gs);
   }
   Array.prototype.forEach.call(doc.querySelectorAll(".exercise-card"), addArrows);
   new (fr_win(doc).MutationObserver||MutationObserver)(function(muts){
