@@ -2147,6 +2147,7 @@ function repubDispatch(push){
     _repub.phase=push?"push":"dry";
     out.innerHTML='<div class="empty-hist">'+(push?"Publishing":"Dry run building")+' \u2014 this takes a minute or two\u2026</div>';
     _repub.since=Math.floor(Date.now()/1000)-5;
+    _repub.tries=0;
     if(_repub.timer) clearTimeout(_repub.timer);
     _repub.timer=setTimeout(repubPoll,15000);
   })
@@ -2154,6 +2155,12 @@ function repubDispatch(push){
 }
 function repubPoll(){
   var out=document.getElementById("repubResult");
+  _repub.tries=(_repub.tries||0)+1;
+  if(_repub.tries>16){
+    out.innerHTML='<div class="empty-hist" style="color:var(--red)">No result after 4 minutes \u2014 the run likely failed.</div>'
+      +'<div class="empty-hist">Check masters \u2192 Actions for the red run, or start again.</div>';
+    return;
+  }
   fetch(repubApi("/contents/system/republish-last-run.json?ref="+PCFG.branch+"&t="+Date.now()),{headers:progHeaders()})
   .then(function(r){ if(!r.ok) throw new Error("no summary yet"); return r.json(); })
   .then(function(d){
@@ -2262,12 +2269,19 @@ function invBuild(){
   .then(function(r){
     if(!r.ok&&r.status!==204) throw new Error("dispatch "+r.status);
     out.innerHTML='<div class="empty-hist">Building invoice \u2014 about a minute\u2026</div>';
+    _inv.tries=0;
     setTimeout(invPoll,15000);
   })
   .catch(function(e){ out.innerHTML='<div class="empty-hist">'+e.message+'</div>'; });
 }
 function invPoll(){
   var out=document.getElementById("invResult");
+  _inv.tries=(_inv.tries||0)+1;
+  if(_inv.tries>16){
+    out.innerHTML='<div class="empty-hist" style="color:var(--red)">No result after 4 minutes \u2014 the build likely failed.</div>'
+      +'<div class="empty-hist">Check masters \u2192 Actions for the red run, or tap Run to try again.</div>';
+    return;
+  }
   fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/invoice-last.json?ref="+PCFG.branch+"&t="+Date.now(),{headers:progHeaders()})
   .then(function(r){ if(!r.ok) throw new Error("wait"); return r.json(); })
   .then(function(d){
@@ -2277,7 +2291,7 @@ function invPoll(){
     out.innerHTML='<div class="empty-hist" style="color:var(--green)">'+res.filename+' filed \u2713</div>'
       +'<div class="actions" style="margin-top:10px"><button class="act session" onclick="window.location.href=\'shortcuts://run-shortcut?name=\'+encodeURIComponent(\'JB Invoice Mail\')">Compose email to Jules</button></div>';
   })
-  .catch(function(){ setTimeout(invPoll,15000); });
+  .catch(function(e){ if(String(e.message).indexOf("stale")<0&&String(e.message).indexOf("wait")<0){} setTimeout(invPoll,15000); });
 }
 function actStub(name, needs){
   alert(name+" is not wired up yet. It needs "+needs+".");
