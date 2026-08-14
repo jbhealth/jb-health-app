@@ -2258,9 +2258,14 @@ function renderInvPlan(){
   html+='<div class="actions" style="margin-top:12px"><button class="act session" onclick="invBuild()">Build #'+_inv.number+'</button></div>';
   out.innerHTML=html;
 }
-function invBuild(){
+function invStatus(msg,sub){
   var out=document.getElementById("invResult");
+  out.innerHTML='<div class="empty-hist">'+msg+'</div>'+(sub?'<div class="empty-hist" style="font-size:11px">'+sub+'</div>':'');
+}
+function invBuild(){
   _inv.since=Math.floor(Date.now()/1000)-5;
+  _inv.dispatchedAt=new Date(Date.now()-8000).toISOString();
+  _inv.runId=null; _inv.tries=0;
   var created=new Date().toISOString().slice(0,10);
   fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/actions/workflows/invoice.yml/dispatches",{
     method:"POST",headers:progHeaders(),
@@ -2268,11 +2273,53 @@ function invBuild(){
       number:String(_inv.number),ym:_inv.ym,created:created,classes:JSON.stringify(_inv.classes)}})})
   .then(function(r){
     if(!r.ok&&r.status!==204) throw new Error("dispatch "+r.status);
-    out.innerHTML='<div class="empty-hist">Building invoice \u2014 about a minute\u2026</div>';
-    _inv.tries=0;
-    setTimeout(invPoll,15000);
+    invStatus("Sent to GitHub \u2014 waiting for the runner\u2026");
+    setTimeout(invWatch,6000);
   })
-  .catch(function(e){ out.innerHTML='<div class="empty-hist">'+e.message+'</div>'; });
+  .catch(function(e){ invStatus(e.message); });
+}
+/* watch the real run: find it, then narrate its steps */
+function invWatch(){
+  _inv.tries++;
+  if(_inv.tries>40){ invStatus("No result after 4 minutes \u2014 the build likely failed.","Check masters \u2192 Actions for the red run, or tap Run to try again."); return; }
+  var base="https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/actions/";
+  if(!_inv.runId){
+    fetch(base+"workflows/invoice.yml/runs?per_page=3&created=>"+encodeURIComponent(_inv.dispatchedAt),{headers:progHeaders()})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      var run=(j.workflow_runs||[])[0];
+      if(run){ _inv.runId=run.id; invStatus("Runner picked it up\u2026"); }
+      setTimeout(invWatch,6000);
+    })
+    .catch(function(){ setTimeout(invWatch,6000); });
+    return;
+  }
+  fetch(base+"runs/"+_inv.runId+"/jobs",{headers:progHeaders()})
+  .then(function(r){ return r.json(); })
+  .then(function(j){
+    var job=(j.jobs||[])[0];
+    if(!job){ setTimeout(invWatch,6000); return; }
+    if(job.status!=="completed"){
+      var cur=null;
+      (job.steps||[]).forEach(function(s){ if(s.status==="in_progress") cur=s.name; });
+      var label={"Set up job":"Starting the runner\u2026",
+        "Run actions/checkout@v4":"Fetching the system\u2026",
+        "Run actions/setup-node@v4":"Preparing tools\u2026",
+        "Run actions/setup-python@v5":"Preparing tools\u2026",
+        "Build docx":"Building the invoice document\u2026",
+        "Publish (repo + Worker + summary)":"Filing it + preparing the email hand-off\u2026"}[cur]||(cur?cur+"\u2026":"Running\u2026");
+      invStatus(label,"Step "+((job.steps||[]).filter(function(s){return s.status==="completed";}).length)+" of 6");
+      setTimeout(invWatch,6000);
+      return;
+    }
+    if(job.conclusion==="success"){ _inv.tries=0; invPoll(); return; }
+    /* failed: name the step, then try to show the trace from the summary */
+    var bad=null;
+    (job.steps||[]).forEach(function(s){ if(s.conclusion==="failure"&&!bad) bad=s.name; });
+    invStatus('<span style="color:var(--red)">Failed at: '+esc(bad||"unknown step")+'</span>',"Fetching the error\u2026");
+    _inv.tries=12; setTimeout(invPoll,4000);
+  })
+  .catch(function(){ setTimeout(invWatch,6000); });
 }
 function invPoll(){
   var out=document.getElementById("invResult");
