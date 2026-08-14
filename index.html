@@ -2078,9 +2078,22 @@ function notifState(){
   return Notification.permission;
 }
 function paintNotifBtn(){
+  /* four honest states: n/a, blocked, enabled-and-registered, or not-yet.
+     Permission alone isn't "done" — the device must also hold a live push
+     subscription that reached the Worker. */
   var b=document.getElementById("notifBtn"); if(!b) return;
   var s=notifState();
-  b.textContent=(s==="granted")?"Notifications \u2713":(s==="unsupported")?"Notifs n/a":"Notifications";
+  if(s==="unsupported"){ b.textContent="Notifs n/a"; return; }
+  if(s==="denied"){ b.textContent="Notifs blocked"; return; }
+  if(s!=="granted"){ b.textContent="Enable notifications"; return; }
+  b.textContent="Finish notif setup";
+  if(!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.getRegistration().then(function(reg){
+    if(!reg) return;
+    return reg.pushManager.getSubscription();
+  }).then(function(sub){
+    if(sub&&lsGet("jbh_push_ok")==="1"){ b.textContent="Notifications \u2713"; b.style.color="var(--green)"; }
+  }).catch(function(){});
 }
 async function enableNotifs(){
   var s=notifState();
@@ -2098,6 +2111,7 @@ async function enableNotifs(){
     var r=await fetch(WORKER+"/subscribe",{method:"POST",headers:{"x-jb-admin":adminTok(),"content-type":"application/json"},body:JSON.stringify({subscription:sub.toJSON()})});
     var j=await r.json();
     if(!j.ok) throw new Error(j.error||"subscribe failed");
+    lsSet("jbh_push_ok","1");
     paintNotifBtn();
     alert("Done \u2014 this device now gets a ping when a log or intake arrives.");
   }catch(e){ alert("Couldn\u2019t enable: "+e.message); }
