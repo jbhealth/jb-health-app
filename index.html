@@ -2433,22 +2433,53 @@ function invWatch(){
   .catch(function(){ setTimeout(invWatch,6000); });
 }
 function invView(){
-  /* fetch the deposited docx with the admin header and hand it to the system
-     viewer — a plain link can't carry the header. Opens outside the card. */
-  var at=adminTok();
-  if(!at){ alert("Set the endpoint token first (Pending tab)."); return; }
-  fetch(WORKER+"/invoice?ym="+encodeURIComponent(_inv.ym||""),{headers:{"x-jb-admin":at}})
-  .then(function(r){
-    if(!r.ok) throw new Error(r.status===404?"No copy on the Worker \u2014 the deposit leg didn\u2019t land; the filed copy is in jb-health-data.":"fetch "+r.status);
-    return r.blob();
-  })
-  .then(function(b){
-    var u=URL.createObjectURL(b.slice(0,b.size,"application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
-    var w=window.open(u,"_blank");
-    if(!w) window.location.href=u;
-    setTimeout(function(){ URL.revokeObjectURL(u); },60000);
-  })
-  .catch(function(e){ alert("Couldn\u2019t open the invoice: "+e.message); });
+  /* iOS won't Quick-Look a docx from a blob URL, so render a faithful HTML
+     twin from the same data that built the docx — identical rows and totals —
+     and confirm the real attachment is waiting on the Worker underneath. */
+  if(!_inv.classes||!_inv.number){ alert("Run a build first \u2014 the preview comes from this session\u2019s data."); return; }
+  var wd=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  var mons=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var ymp=_inv.ym.split("-"),per=mons[+ymp[1]-1]+" "+ymp[0];
+  var today=new Date(),dstr=today.getUTCDate()+" "+mons[today.getUTCMonth()]+" "+today.getUTCFullYear();
+  var due=new Date(today.getTime()+14*86400000);
+  var duestr=due.getUTCDate()+" "+mons[due.getUTCMonth()]+" "+due.getUTCFullYear();
+  var rows="",n=0;
+  _inv.classes.forEach(function(c){
+    n++;
+    var p=c[0].split("-"),dt=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));
+    rows+='<tr'+(n%2?' class="alt"':'')+'><td>'+n+'</td><td>'+wd[dt.getUTCDay()]+' '+(+p[2])+' '+mons[dt.getUTCMonth()].slice(0,3)+'</td><td>'+c[1]+'</td><td class="r">\u00a330</td></tr>';
+  });
+  var total=_inv.classes.length*30;
+  var html='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<style>body{font-family:Arial,sans-serif;color:#1A1A1A;margin:0;padding:0;background:#f2f5f8}'
+    +'.page{max-width:640px;margin:0 auto;background:#fff;padding:22px 20px 30px}'
+    +'.hdr{background:#1B3F6B;color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center}'
+    +'.hdr b{font-size:19px}.hdr span{font-size:20px;letter-spacing:2px}'
+    +'.meta{display:flex;justify-content:space-between;font-size:12.5px;margin:14px 0;gap:12px;flex-wrap:wrap}'
+    +'.lbl{color:#2E86C1;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}'
+    +'table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}'
+    +'th{background:#1B3F6B;color:#fff;text-align:left;padding:7px 9px;font-size:11px}'
+    +'td{padding:6px 9px;border-bottom:1px solid #D4E4F0}.alt td{background:#E8F4FD}.r{text-align:right}'
+    +'.tot{display:flex;justify-content:flex-end;margin-top:12px}'
+    +'.tot table{width:auto;min-width:220px}.tot .due td{background:#1B3F6B;color:#fff;font-weight:700}'
+    +'.foot{color:#6B7A8D;font-size:12px;margin-top:20px}.note{font-size:11px;color:#6B7A8D;margin:10px 0 0}'
+    +'#att{font-size:12px;margin-top:14px;padding:8px 10px;border-radius:8px;background:#E8F4FD}</style></head><body><div class="page">'
+    +'<div class="hdr"><div><b>James Baker</b><div style="font-size:11px;opacity:.85">Personal Trainer</div></div><span>INVOICE</span></div>'
+    +'<div class="meta"><div><div class="lbl">Invoice No.</div>#'+_inv.number+'</div><div><div class="lbl">Date</div>'+dstr+'</div><div><div class="lbl">Period</div>'+per+'</div></div>'
+    +'<div class="meta"><div><div class="lbl">Bill To</div>Combe Grove</div><div><div class="lbl">Payable by</div>Within 14 days (by '+duestr+')</div></div>'
+    +'<div class="meta"><div><div class="lbl">Payment</div>HSBC \u00b7 40-44-33 \u00b7 71684949 \u00b7 James Baker</div></div>'
+    +'<table><tr><th>#</th><th>Date</th><th>Class</th><th class="r">Amount</th></tr>'+rows+'</table>'
+    +'<div class="note">All sessions 45 minutes \u00b7 \u00a330 per class</div>'
+    +'<div class="tot"><table><tr><td>'+_inv.classes.length+' classes \u00d7 \u00a330</td><td class="r">\u00a3'+total+'</td></tr><tr class="due"><td>TOTAL DUE</td><td class="r">\u00a3'+total+'</td></tr></table></div>'
+    +'<div class="foot">Thank you for your continued business.<br><br>Kind regards,<br><b style="color:#1B3F6B">James Baker</b></div>'
+    +'<div id="att">Checking the email attachment\u2026</div>'
+    +'<div class="note">Preview rendered from the build data \u2014 the file Jules receives is the Word original with identical contents.</div>'
+    +'<script>fetch("'+WORKER+'/invoice?ym='+encodeURIComponent(_inv.ym)+'",{headers:{"x-jb-admin":"'+(adminTok()||"")+'"}}).then(function(r){document.getElementById("att").textContent=r.ok?"Attachment ready for the Mail Shortcut \u2713":"Attachment NOT on the Worker \u2014 the email leg will find nothing (the filed copy in the repo is safe).";document.getElementById("att").style.background=r.ok?"#E8F5E9":"#FDECEA";}).catch(function(){document.getElementById("att").textContent="Couldn\u2019t check the attachment.";});<\/script>'
+    +'</div></body></html>';
+  var u=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+  var w=window.open(u,"_blank");
+  if(!w) window.location.href=u;
+  setTimeout(function(){ URL.revokeObjectURL(u); },120000);
 }
 function invPoll(){
   var out=document.getElementById("invResult");
