@@ -2192,6 +2192,7 @@ function repubStatus(msg,sub){
 }
 function repubDispatch(push){
   var out=document.getElementById("repubResult");
+  if(!_repub.scope||!String(_repub.scope).trim()){ out.innerHTML='<div class="empty-hist">No clients to republish \u2014 pick a scope first.</div>'; return; }
   fetch(repubApi("/actions/workflows/republish.yml/dispatches"),{
     method:"POST",headers:progHeaders(),
     body:JSON.stringify({ref:PCFG.branch,inputs:{clients:_repub.scope,push:push?"true":"false"}})})
