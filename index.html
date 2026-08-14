@@ -2265,6 +2265,21 @@ function repubPoll(){
   })
   .catch(function(){ _repub.timer=setTimeout(repubPoll,15000); });
 }
+function repubPreview(client){
+  /* fetch the dry-run's actual built page from masters/system/preview and open
+     it — a <base> tag makes photos and pills resolve against the live site */
+  fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/preview/"+client+"_Programs_Client.html?ref="+PCFG.branch+"&t="+Date.now(),{headers:progHeaders()})
+  .then(function(r){ if(!r.ok) throw new Error(r.status===404?"no preview staged \u2014 run a fresh dry run":"fetch "+r.status); return r.json(); })
+  .then(function(d){
+    var html=b64ToUtf8(d.content);
+    html=html.replace(/<head([^>]*)>/i,'<head$1><base href="https://jbhealth.github.io/programs/">');
+    var u=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+    var w=window.open(u,"_blank");
+    if(!w) window.location.href=u;
+    setTimeout(function(){ URL.revokeObjectURL(u); },60000);
+  })
+  .catch(function(e){ alert("Couldn\u2019t open preview: "+e.message); });
+}
 function renderRepub(res){
   var out=document.getElementById("repubResult");
   if(res.status==="error"){ out.innerHTML='<div class="empty-hist">Run crashed:</div><div class="mini-row" style="white-space:pre-wrap;font-size:10.5px;color:var(--red)">'+esc(res.error||"unknown")+'</div>'; return; }
@@ -2273,7 +2288,8 @@ function renderRepub(res){
   (res.rows||[]).forEach(function(r){
     var col=(r.status.indexOf("FAIL")===0||r.status==="SKIP")?"var(--red)":"var(--green)";
     if(col==="var(--red)") bad++;
-    html+='<div class="mini-row"><span>'+r.client+' <span style="color:'+col+'">'+r.status+'</span></span><span style="color:var(--grey);font-size:11px">'+(r.note||"")+"</span></div>";
+    var view=(!res.pushed&&col!=="var(--red)")?' <a href="#" onclick="event.preventDefault();repubPreview(\''+r.client+'\')" style="color:var(--blue);font-size:11px">view</a>':"";
+    html+='<div class="mini-row"><span>'+r.client+' <span style="color:'+col+'">'+r.status+'</span>'+view+'</span><span style="color:var(--grey);font-size:11px">'+(r.note||"")+"</span></div>";
   });
   if(res.pushed){
     html+='<div class="empty-hist" style="color:var(--green);margin-top:8px">Published \u2713</div>';
