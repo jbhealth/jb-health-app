@@ -1926,7 +1926,7 @@ async function fetchPending(){
 async function resolvePending(key){
   await fetch(WORKER+"/resolve", {method:"POST", headers:{"content-type":"application/json","x-jb-admin":adminTok()}, body:JSON.stringify({key:key})});
 }
-async /* Ingest-on-approval (build step 6): Approve dispatches the ingest Action,
+/* Ingest-on-approval (build step 6): Approve dispatches the ingest Action,
    which strict-matches the log against the live master, writes the full-workout
    archive block, banks the store, and republishes the client — or flags and
    writes NOTHING, leaving the item pending for the roundup. Dispatch failure
