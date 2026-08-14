@@ -2379,8 +2379,8 @@ function runVatCheck(){
   out.innerHTML='<div class="empty-hist">Checking\u2026</div>';
   var tok=progToken();
   if(!tok){out.innerHTML='<div class="empty-hist">Set your GitHub token first (Programs tab).</div>';return;}
-  fetch("https://api.github.com/repos/jbhealth/jb-health-data/contents/vat-baseline.json?ref=main",{headers:progHeaders()})
-  .then(function(r){if(!r.ok)throw new Error("baseline "+r.status);return r.json();})
+  fetch("https://api.github.com/repos/jbhealth/jb-health-data/contents/vat-baseline.json?ref=main&t="+Date.now(),{headers:progHeaders(),cache:"no-store"})
+  .then(function(r){if(!r.ok)throw new Error(r.status===401||r.status===403?"GitHub refused the token ("+r.status+")":"baseline "+r.status);return r.json();})
   .then(function(d){
     var base=JSON.parse(atob(d.content.replace(/\n/g,"")));
     var months={};
@@ -2423,7 +2423,7 @@ function runVatCheck(){
     html+=row("Projected crossing",crossing||"not within 3 years at this rate");
     out.innerHTML=html;
   })
-  .catch(function(e){out.innerHTML='<div class="empty-hist">VAT check failed ('+e.message+'). Token needs jb-health-data access.</div>';});
+  .catch(function(e){out.innerHTML='<div class="empty-hist">VAT check failed ('+e.message+').</div>';});
 }
 
 </script>
