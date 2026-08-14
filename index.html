@@ -242,7 +242,7 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 </div>
 
 <div class="view" id="view-pending">
-  <div class="actbar"><button class="primary" onclick="loadPending()">Refresh</button><button class="ghost" onclick="setAdminTok()">Endpoint token</button></div>
+  <div class="actbar"><button class="primary" onclick="loadPending()">Refresh</button><button class="ghost" onclick="setAdminTok()">Endpoint token</button><button class="ghost" id="notifBtn" onclick="enableNotifs()">Notifications</button></div>
   <div class="list" id="pendingList" style="padding-bottom:0"><div class="note">Tap Refresh to load client submissions.</div></div>
   <div class="list" id="intakeList" style="padding-top:0"></div>
   <div class="note">Client-submitted loads land here for approval: <b>Approve</b> archives the full workout to their page (or flags it for the roundup); <b>Reject</b> discards it. New <b>intake forms</b> from Tally appear below the logs; <b>Done</b> clears one once you've acted on it.</div>
@@ -1887,7 +1887,7 @@ window.addEventListener("popstate", function(){
 });
 function startup(){ loadCfg();
   try{ var c=lsGet("jbh_cache"); if(c) applyBundle(JSON.parse(c)); }catch(e){}
-  seedDefaults(); renderAll(); loadRoster(); loadToday(); maybeOfferTomorrow(); dataLoaded=true; switchTab("programs"); _historyTrap();
+  seedDefaults(); renderAll(); loadRoster(); loadToday(); maybeOfferTomorrow(); swRegister(); paintNotifBtn(); dataLoaded=true; switchTab("programs"); _historyTrap();
   if(ghConfigured()){ setSave("","Connected — pulling latest\u2026"); pullFromGitHub(); }
   else { setSave("","Saved on this device. Tap Sync to enable phone\u2194PC sync."); }
 }
@@ -2066,6 +2066,42 @@ async function onReject(i){
 /* ---- home-screen badge for pending items (App Badging API) ---- */
 function osBadge(n){ try{ if("setAppBadge" in navigator){ if(n>0){ navigator.setAppBadge(n); } else if("clearAppBadge" in navigator){ navigator.clearAppBadge(); } } }catch(e){} }
 function requestNotifPerm(){ try{ if("Notification" in window && Notification.permission==="default"){ Notification.requestPermission(); } }catch(e){} }
+/* ── Push notifications (build step 7½) ──
+   Registration is lazy and harmless: the SW is network-first for the page, so
+   the app's self-updating property is untouched. iOS requires the permission
+   ask to come from a tap, hence the button. */
+function swRegister(){
+  if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(function(){}); }
+}
+function notifState(){
+  if(!("Notification" in window)||!("serviceWorker" in navigator)||!("PushManager" in window)) return "unsupported";
+  return Notification.permission;
+}
+function paintNotifBtn(){
+  var b=document.getElementById("notifBtn"); if(!b) return;
+  var s=notifState();
+  b.textContent=(s==="granted")?"Notifications \u2713":(s==="unsupported")?"Notifs n/a":"Notifications";
+}
+async function enableNotifs(){
+  var s=notifState();
+  if(s==="unsupported"){ alert("This device/browser can\u2019t do web push. On iPhone the app must be opened from the Home Screen icon (iOS 16.4+)."); return; }
+  if(!adminTok()){ alert("Set the endpoint token first."); return; }
+  try{
+    var perm=await Notification.requestPermission();
+    if(perm!=="granted"){ alert("Notifications not allowed \u2014 you can change this in Settings \u2192 Notifications."); paintNotifBtn(); return; }
+    var reg=await navigator.serviceWorker.register("sw.js");
+    await navigator.serviceWorker.ready;
+    var pubR=await fetch(WORKER+"/vapid-pub"); var pub=(await pubR.json()).key;
+    var toBytes=function(s){ s=s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4)s+="="; var bin=atob(s); return Uint8Array.from(bin,function(c){return c.charCodeAt(0);}); };
+    var sub=await reg.pushManager.getSubscription();
+    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:toBytes(pub)});
+    var r=await fetch(WORKER+"/subscribe",{method:"POST",headers:{"x-jb-admin":adminTok(),"content-type":"application/json"},body:JSON.stringify({subscription:sub.toJSON()})});
+    var j=await r.json();
+    if(!j.ok) throw new Error(j.error||"subscribe failed");
+    paintNotifBtn();
+    alert("Done \u2014 this device now gets a ping when a log or intake arrives.");
+  }catch(e){ alert("Couldn\u2019t enable: "+e.message); }
+}
 async function refreshBadge(){ if(!adminTok()){ osBadge(0); return; } try{ var items=await fetchPending(); var n=items.length; try{ n+=(await fetchIntakes()).length; }catch(e){} osBadge(n); updatePendingBadge(n); }catch(e){} }
 /* badge on open, then keep it fresh while the app is open (background updates need Web Push) */
 setTimeout(function(){ requestNotifPerm(); refreshBadge(); }, 1500);
