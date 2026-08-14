@@ -2165,6 +2165,7 @@ function repubPoll(){
 }
 function renderRepub(res){
   var out=document.getElementById("repubResult");
+  if(res.status==="error"){ out.innerHTML='<div class="empty-hist">Run crashed:</div><div class="mini-row" style="white-space:pre-wrap;font-size:10.5px;color:var(--red)">'+esc(res.error||"unknown")+'</div>'; return; }
   var html='<div class="hist-label">'+(res.pushed?"Published":"Dry run")+' \u2014 '+res.staged+' page(s) staged</div>';
   var bad=0;
   (res.rows||[]).forEach(function(r){
@@ -2242,8 +2243,10 @@ function renderInvPlan(){
   var out=document.getElementById("invResult");
   var total=_inv.classes.length*30;
   var html='<div class="hist-label">Invoice #'+_inv.number+' \u00b7 '+_inv.ym+' \u00b7 '+_inv.classes.length+' classes \u00d7 \u00a330 = \u00a3'+total+'</div>';
+  var wd=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   _inv.classes.forEach(function(c){
-    html+='<div class="mini-row"><span>'+c[0]+'</span><span>'+c[1]+"</span></div>";
+    var p=c[0].split("-"),d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));
+    html+='<div class="mini-row"><span>'+wd[d.getUTCDay()]+' '+(+p[2])+'</span><span>'+c[1]+"</span></div>";
   });
   html+='<div class="actions" style="margin-top:12px"><button class="act session" onclick="invBuild()">Build #'+_inv.number+'</button></div>';
   out.innerHTML=html;
@@ -2270,6 +2273,7 @@ function invPoll(){
   .then(function(d){
     var res=JSON.parse(b64ToUtf8(d.content));
     if(res.ts<_inv.since||res.ym!==_inv.ym) throw new Error("stale");
+    if(res.status==="error"){ out.innerHTML='<div class="empty-hist">Build failed on the runner:</div><div class="mini-row" style="white-space:pre-wrap;font-size:10.5px;color:var(--red)">'+esc(res.error||"unknown")+'</div>'; return; }
     out.innerHTML='<div class="empty-hist" style="color:var(--green)">'+res.filename+' filed \u2713</div>'
       +'<div class="actions" style="margin-top:10px"><button class="act session" onclick="window.location.href=\'shortcuts://run-shortcut?name=\'+encodeURIComponent(\'JB Invoice Mail\')">Compose email to Jules</button></div>';
   })
