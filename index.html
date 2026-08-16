@@ -2193,6 +2193,25 @@ function repubResolveToday(){
   })
   .catch(function(){ fallback("Worker unreachable"); });
 }
+function offerPrePublish(order){
+  var out=document.getElementById("todayResult");
+  var codes=[]; order.forEach(function(o){ if(codes.indexOf(o.c)===-1) codes.push(o.c); });
+  var dbl=[]; var seen={};
+  order.forEach(function(o){ seen[o.c]=(seen[o.c]||0)+1; });
+  Object.keys(seen).forEach(function(c){ if(seen[c]>1) dbl.push(c+" x"+seen[c]); });
+  var note=dbl.length?'<div class="empty-hist" style="font-size:11px">Two sessions tomorrow, so two programmes each: '+dbl.join(", ")+'</div>':'';
+  out.innerHTML+='<div class="empty-hist" style="margin-top:10px">Pre-publish tomorrow\u2019s programme for '+codes.join(", ")+'?</div>'+note
+    +'<div class="actions" style="margin-top:8px"><button class="act session" onclick="prePublishTomorrow()">Dry run</button></div>';
+}
+function prePublishTomorrow(){
+  var card=document.getElementById("repubCard");
+  var body=document.getElementById("repubBody");
+  if(body) body.style.display="block";
+  if(card&&card.scrollIntoView) card.scrollIntoView({behavior:"smooth",block:"center"});
+  _repub={scope:"tomorrow",since:Math.floor(Date.now()/1000)-5,timer:null,phase:"dry"};
+  repubStatus("Building tomorrow\u2019s pages\u2026","Undelivered programmes stay hidden; the gate shows only what is due.");
+  repubDispatch(false);
+}
 function repubStatus(msg,sub){
   var out=document.getElementById("repubResult");
   out.innerHTML='<div class="empty-hist">'+msg+'</div>'+(sub?'<div class="empty-hist" style="font-size:11px">'+sub+'</div>':'');
@@ -2595,7 +2614,13 @@ function pushTodayJson(){
     return fetch(api,{method:"PUT",headers:progHeaders(),body:JSON.stringify(b)});
   })
   .then(function(r){ if(!r.ok) throw new Error("push "+r.status); return r.json(); })
-  .then(function(){ out.innerHTML='<div class="empty-hist" style="color:var(--green)">Pushed \u2713 \u2014 dashboard ordered for '+_staged.date+'.</div>'; })
+  .then(function(){
+    out.innerHTML='<div class="empty-hist" style="color:var(--green)">Pushed \u2713 \u2014 dashboard ordered for '+_staged.date+'.</div>';
+    /* Publish-on-eve (16 Aug 2026): the same order that tops tomorrow's dashboard
+       tells the gate who to pre-publish for, one programme each, so nobody sees a
+       block early. Dry run first, exactly like a manual republish: nothing goes
+       live until you read the table and tap Publish. */
+    if(_stagedOffset===1) offerPrePublish(order); })
   .catch(function(e){ out.innerHTML='<div class="empty-hist">Push failed ('+e.message+').</div>'; });
 }
 
