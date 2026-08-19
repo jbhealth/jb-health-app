@@ -442,8 +442,14 @@ function showTomorrowBanner(tmr,order){
     })
     .then(function(r){ if(!r.ok) throw new Error(r.status);
       lsSet("jbh_banner_done",tmr);
-      b.innerHTML='<span style="color:var(--green)">Tomorrow ordered \u2713</span>';
+      b.innerHTML='<span style="color:var(--green)">Tomorrow ordered \u2713 \u2014 publishing pages\u2026</span>';
       setTimeout(function(){ b.remove(); },2500);
+      /* Publish-on-eve continuation (19 Aug 2026): the banner used to stop at
+         the order file, silently skipping the eve publish the full path runs —
+         which stranded four clients on old pages. Same chain now: dry run,
+         then the explicit Push tap. */
+      switchTab("actions");
+      prePublishTomorrow();
     })
     .catch(function(e){ b.innerHTML='<span>Push failed ('+e.message+') \u2014 use Today refresh instead.</span>'; setTimeout(function(){ b.remove(); },4000); });
   };
