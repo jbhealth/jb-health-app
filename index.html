@@ -2626,7 +2626,10 @@ function pushTodayJson(){
        tells the gate who to pre-publish for, one programme each, so nobody sees a
        block early. Dry run first, exactly like a manual republish: nothing goes
        live until you read the table and tap Publish. */
-    if(_stagedOffset===1) offerPrePublish(order); })
+    /* 19 Aug 2026: the eve publish is no longer an easy-to-miss offer below
+       this message — pushing tomorrow's order rolls STRAIGHT into the dry run,
+       and only the Push tap on the result table remains manual. */
+    if(_stagedOffset===1) prePublishTomorrow(); })
   .catch(function(e){ out.innerHTML='<div class="empty-hist">Push failed ('+e.message+').</div>'; });
 }
 
