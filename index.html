@@ -2679,6 +2679,9 @@ function runVatCheck(){
     if(forward>=VAT.RED){fwdStatus="RED";fwdCol="var(--red)";}
     else if(forward>=VAT.AMBER){fwdStatus="AMBER";fwdCol="var(--amber)";}
     else{fwdStatus="GREEN";fwdCol="var(--green)";}
+    /* Monthly ceiling: sustain below THRESHOLD/12 and the rolling total never crosses,
+       however long you run. The number to steer by month to month. */
+    var ceiling=VAT.THRESHOLD/12,ceilHead=ceiling-runRate,ceilCol=ceilHead>=0?"var(--green)":"var(--red)";
     var crossing=null,proj=rolling,cur=asof;
     for(var i=1;i<=36;i++){
       cur=vatNextMonth(cur);
@@ -2694,6 +2697,8 @@ function runVatCheck(){
     html+=row("Threshold",vatGBP(VAT.THRESHOLD));
     html+=row("Headroom",vatGBP(VAT.THRESHOLD-rolling));
     html+=row("3-month run rate",vatGBP(runRate)+"/month");
+    html+=row("Monthly ceiling",vatGBP(ceiling)+"/month");
+    html+=row(ceilHead>=0?"Room per month":"OVER ceiling by",'<span style="color:'+ceilCol+';font-weight:600">'+vatGBP(Math.abs(ceilHead))+"</span>");
     if(excluded)html+=row("Excluded (out of scope)",vatGBP(excluded));
     html+=row("Next 12m at that rate",'<span style="color:'+fwdCol+';font-weight:600">'+vatGBP(forward)+"</span>");
     html+=row(fwdHead>=0?"Under threshold by":"OVER threshold by",vatGBP(Math.abs(fwdHead)));
