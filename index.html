@@ -244,7 +244,7 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 <div class="view" id="view-pending">
   <div class="actbar"><button class="primary" onclick="loadPending()">Refresh</button><button class="ghost" onclick="setAdminTok()">Endpoint token</button><button class="ghost" id="notifBtn" onclick="enableNotifs()">Notifications</button></div>
   <div class="list" id="pendingList" style="padding-bottom:0"><div class="note">Tap Refresh to load client submissions.</div></div>
-  <div class="list" id="intakeList" style="padding-top:0"></div>
+  <div class="list" id="intakeList" style="padding-top:0;padding-bottom:0"></div>
   <div class="list" id="summaryList" style="padding-top:0"></div>
   <div class="note">Client-submitted loads land here for approval: <b>Approve</b> archives the full workout to their page (or flags it for the roundup); <b>Reject</b> discards it. New <b>intake forms</b> from Tally appear below the logs; <b>Done</b> clears one once you've acted on it.</div>
 </div>
@@ -325,6 +325,11 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 .pl-card.editing .pl-w{display:inline-block;}
 .pl-edit{background:#fff;color:var(--navy,#1B3F6B);border:1px solid var(--border,#D4E4F0) !important;}
 .pl-app{background:#27AE60;color:#fff;}
+    .pl-send{background:var(--navy,#1B3F6B);color:#fff;}
+    .pl-send:disabled{background:#B9CBDD;cursor:default;}
+    .sum-state{font-size:13px;color:var(--grey,#5E7186);margin-top:8px;line-height:1.5;}
+    .sum-state.warn{color:#9A5B00;}
+    .sum-state.ok{color:#27AE60;font-weight:600;}
 .pl-rej{background:#fff;color:#9A3030;border:1px solid #E0B4B4 !important;}
 </style>
 <script>
@@ -2092,30 +2097,31 @@ async function renderSummaries(){
   var box = document.getElementById("summaryList"); if(!box) return;
   box.innerHTML = "";
   try{ _summary = await fetchSummary(); }catch(e){ _summary = null; }
-  if(!_summary || !(_summary.items||[]).length) return;
+  if(!_summary || !(_summary.items||[]).length){ box.style.display="none"; return; }
+  box.style.display="";
 
   var wk = summaryWeekLabel(_summary.wc), n = _summary.items.length;
-  box.innerHTML = '<div class="pl-card"><div class="pl-head"><b>Weekly summaries</b>'+
-    '<span style="opacity:.5;font-weight:500"> '+esc(wk)+'</span></div>'+
-    '<div class="note" id="sumState">'+n+' approved. Checking contacts\u2026</div>'+
-    '<div class="pl-actions"><button class="primary" id="sumSend" disabled>Send</button></div></div>';
+  box.innerHTML = '<div class="pl-card"><div class="pl-head"><span><b>Weekly summaries</b></span>'+
+    '<span class="pl-date">'+esc(wk)+'</span></div>'+
+    '<div class="sum-state" id="sumState">'+n+' summar'+(n===1?'y':'ies')+', checking contacts\u2026</div>'+
+    '<div class="pl-btns"><button class="pl-send" id="sumSend" disabled>Send</button></div></div>';
 
   var state = document.getElementById("sumState");
   var btn   = document.getElementById("sumSend");
 
   var chk;
   try{ chk = await checkSummary(_summary); }
-  catch(e){ state.className="statusline warn";
+  catch(e){ state.className="sum-state warn";
             state.textContent = "Couldn\u2019t reach the endpoint ("+e.message+")."; return; }
 
   if((chk.missing||[]).length){
-    state.className = "statusline warn";
+    state.className = "sum-state warn";
     state.textContent = "Not sending: no Brevo contact for "+chk.missing.join(", ")+
                         ". Add the CLIENT_CODE in Brevo, then refresh.";
     return;
   }
 
-  state.textContent = n+" approved, "+n+" contacts matched. Ready to send.";
+  state.textContent = n+" approved, "+n+" contact"+(n===1?"":"s")+" matched. Ready to send.";
   btn.disabled = false;
   btn.onclick = async function(){
     if(btn.disabled) return;
@@ -2129,12 +2135,12 @@ async function renderSummaries(){
       });
       var j = await r.json();
       if(!r.ok || j.ok===false) throw new Error(j.error || ("worker "+r.status));
-      state.className = "statusline ok";
+      state.className = "sum-state ok";
       state.textContent = "Sent to "+j.sent+" clients.";
       btn.textContent = "Sent";
       await markSummarySent(_summary);
     }catch(e){
-      state.className = "statusline warn";
+      state.className = "sum-state warn";
       state.textContent = "Send failed: "+e.message+". Nothing went out.";
       btn.disabled = false; btn.textContent = "Send";
     }
