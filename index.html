@@ -2128,7 +2128,7 @@ async function renderSummaries(){
                                items:_summary.items, dry:false })
       });
       var j = await r.json();
-      if(!r.ok || j.error) throw new Error(j.error || ("worker "+r.status));
+      if(!r.ok || j.ok===false) throw new Error(j.error || ("worker "+r.status));
       state.className = "statusline ok";
       state.textContent = "Sent to "+j.sent+" clients.";
       btn.textContent = "Sent";
