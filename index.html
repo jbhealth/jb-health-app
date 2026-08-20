@@ -2672,6 +2672,13 @@ function runVatCheck(){
     if(rolling>=VAT.RED){status="RED";note="Decide now: cap hours or reposition prices.";col="var(--red)";}
     else if(rolling>=VAT.AMBER){status="AMBER";note="Watch monthly. Plan the price and capacity call.";col="var(--amber)";}
     else{status="GREEN";note="No action needed.";col="var(--green)";}
+    /* Forward look: next 12 months at the 3-month run rate. Twelve months out every
+       month in the rolling window has been replaced by a run-rate month, so this is
+       also where the rolling total lands if trading holds steady. */
+    var forward=runRate*12,fwdHead=VAT.THRESHOLD-forward,fwdStatus,fwdCol;
+    if(forward>=VAT.RED){fwdStatus="RED";fwdCol="var(--red)";}
+    else if(forward>=VAT.AMBER){fwdStatus="AMBER";fwdCol="var(--amber)";}
+    else{fwdStatus="GREEN";fwdCol="var(--green)";}
     var crossing=null,proj=rolling,cur=asof;
     for(var i=1;i<=36;i++){
       cur=vatNextMonth(cur);
@@ -2688,6 +2695,8 @@ function runVatCheck(){
     html+=row("Headroom",vatGBP(VAT.THRESHOLD-rolling));
     html+=row("3-month run rate",vatGBP(runRate)+"/month");
     if(excluded)html+=row("Excluded (out of scope)",vatGBP(excluded));
+    html+=row("Next 12m at that rate",'<span style="color:'+fwdCol+';font-weight:600">'+vatGBP(forward)+"</span>");
+    html+=row(fwdHead>=0?"Under threshold by":"OVER threshold by",vatGBP(Math.abs(fwdHead)));
     html+=row("Projected crossing",crossing||"not within 3 years at this rate");
     out.innerHTML=html;
   })
