@@ -245,6 +245,7 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
   <div class="actbar"><button class="primary" onclick="loadPending()">Refresh</button><button class="ghost" onclick="setAdminTok()">Endpoint token</button><button class="ghost" id="notifBtn" onclick="enableNotifs()">Notifications</button></div>
   <div class="list" id="pendingList" style="padding-bottom:0"><div class="note">Tap Refresh to load client submissions.</div></div>
   <div class="list" id="intakeList" style="padding-top:0"></div>
+  <div class="list" id="summaryList" style="padding-top:0"></div>
   <div class="note">Client-submitted loads land here for approval: <b>Approve</b> archives the full workout to their page (or flags it for the roundup); <b>Reject</b> discards it. New <b>intake forms</b> from Tally appear below the logs; <b>Done</b> clears one once you've acted on it.</div>
 </div>
 
@@ -2035,6 +2036,130 @@ async function onIntakeDone(i){
     await loadPending();
   }catch(e){ alert("Couldn\u2019t resolve: "+e.message); }
 }
+/* ============================================================
+   Weekly summaries — Pending tab
+   Paste before loadPending() in jb-health-app/index.html, and add
+     <div class="list" id="summaryList" style="padding-top:0"></div>
+   directly after the intakeList div. Then add
+     renderSummaries();
+   inside loadPending(), next to renderIntakes().
+
+   Summaries are approved in the weekly-prep deck. This does NOT ask
+   James to approve again: it checks every client code still resolves
+   to a Brevo contact, then offers one Send.
+   ============================================================ */
+
+var _summary = null;
+
+function summaryWeekLabel(wc){
+  try{
+    var p = wc.split("-");
+    var d = new Date(+p[0], +p[1]-1, +p[2]);
+    return "w/c " + d.getDate() + " " +
+      ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()] +
+      " " + d.getFullYear();
+  }catch(e){ return wc; }
+}
+
+/* Newest unsent file in jb-health-data/summaries/ */
+async function fetchSummary(){
+  var tok = progToken(); if(!tok) return null;
+  var h = { Authorization:"token "+tok, Accept:"application/vnd.github+json" };
+  var r = await fetch("https://api.github.com/repos/jbhealth/jb-health-data/contents/summaries", {headers:h});
+  if(!r.ok) return null;                       // no folder yet
+  var files = (await r.json()).filter(function(f){ return /\.json$/.test(f.name); });
+  if(!files.length) return null;
+  files.sort(function(a,b){ return a.name < b.name ? 1 : -1; });
+  var g = await fetch(files[0].download_url, {headers:h});
+  if(!g.ok) return null;
+  var doc = await g.json();
+  return doc.sent ? null : doc;                // already sent, nothing to show
+}
+
+/* Dry run: are all the codes still resolvable? */
+async function checkSummary(doc){
+  var at = adminTok(); if(!at) throw new Error("no endpoint token");
+  var r = await fetch(WORKER+"/summaries", {
+    method:"POST",
+    headers:{ "x-jb-admin":at, "content-type":"application/json" },
+    body: JSON.stringify({ week: doc.wc, subject: doc.subject, items: doc.items, dry: true })
+  });
+  if(!r.ok) throw new Error("worker "+r.status);
+  return await r.json();
+}
+
+async function renderSummaries(){
+  var box = document.getElementById("summaryList"); if(!box) return;
+  box.innerHTML = "";
+  try{ _summary = await fetchSummary(); }catch(e){ _summary = null; }
+  if(!_summary || !(_summary.items||[]).length) return;
+
+  var wk = summaryWeekLabel(_summary.wc), n = _summary.items.length;
+  box.innerHTML = '<div class="pl-card"><div class="pl-head"><b>Weekly summaries</b>'+
+    '<span style="opacity:.5;font-weight:500"> '+esc(wk)+'</span></div>'+
+    '<div class="note" id="sumState">'+n+' approved. Checking contacts\u2026</div>'+
+    '<div class="pl-actions"><button class="primary" id="sumSend" disabled>Send</button></div></div>';
+
+  var state = document.getElementById("sumState");
+  var btn   = document.getElementById("sumSend");
+
+  var chk;
+  try{ chk = await checkSummary(_summary); }
+  catch(e){ state.className="statusline warn";
+            state.textContent = "Couldn\u2019t reach the endpoint ("+e.message+")."; return; }
+
+  if((chk.missing||[]).length){
+    state.className = "statusline warn";
+    state.textContent = "Not sending: no Brevo contact for "+chk.missing.join(", ")+
+                        ". Add the CLIENT_CODE in Brevo, then refresh.";
+    return;
+  }
+
+  state.textContent = n+" approved, "+n+" contacts matched. Ready to send.";
+  btn.disabled = false;
+  btn.onclick = async function(){
+    if(btn.disabled) return;
+    btn.disabled = true; btn.textContent = "Sending\u2026";
+    try{
+      var r = await fetch(WORKER+"/summaries", {
+        method:"POST",
+        headers:{ "x-jb-admin":adminTok(), "content-type":"application/json" },
+        body: JSON.stringify({ week:_summary.wc, subject:_summary.subject,
+                               items:_summary.items, dry:false })
+      });
+      var j = await r.json();
+      if(!r.ok || j.error) throw new Error(j.error || ("worker "+r.status));
+      state.className = "statusline ok";
+      state.textContent = "Sent to "+j.sent+" clients.";
+      btn.textContent = "Sent";
+      await markSummarySent(_summary);
+    }catch(e){
+      state.className = "statusline warn";
+      state.textContent = "Send failed: "+e.message+". Nothing went out.";
+      btn.disabled = false; btn.textContent = "Send";
+    }
+  };
+}
+
+/* Stamp the file so the row does not come back next refresh. */
+async function markSummarySent(doc){
+  var tok = progToken(); if(!tok) return;
+  var path = "summaries/"+doc.wc+".json";
+  var url  = "https://api.github.com/repos/jbhealth/jb-health-data/contents/"+path;
+  var h = { Authorization:"token "+tok, Accept:"application/vnd.github+json" };
+  var cur = await fetch(url, {headers:h}); if(!cur.ok) return;
+  var meta = await cur.json();
+  doc.sent = new Date().toISOString();
+  await fetch(url, {
+    method:"PUT", headers:h,
+    body: JSON.stringify({
+      message: "summaries: "+doc.wc+" sent",
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(doc, null, 1)))),
+      sha: meta.sha, branch: "main"
+    })
+  });
+}
+
 async function loadPending(){
   var box=document.getElementById("pendingList"); if(!box) return;
   if(!adminTok()){ box.innerHTML='<div class="note">Set the endpoint token first (button above).</div>'; updatePendingBadge(0); osBadge(0); return; }
@@ -2043,6 +2168,7 @@ async function loadPending(){
   catch(e){ box.innerHTML='<div class="statusline warn">Couldn\u2019t reach the endpoint ('+esc(e.message)+').</div>'; return; }
   try{ _intakes=await fetchIntakes(); }catch(e){ _intakes=[]; }
   renderIntakes();
+  renderSummaries();
   var total=_pending.length+_intakes.length;
   if(!_pending.length){ box.innerHTML='<div class="note">No pending logs.</div>'; updatePendingBadge(total); osBadge(total); return; }
   updatePendingBadge(total); osBadge(total);
