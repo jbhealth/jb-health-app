@@ -2140,16 +2140,32 @@ async function renderSummaries(){
                                items:_summary.items, dry:false,
                                ...(_summary.intro ? {intro:_summary.intro} : {}) })
       });
-      var j = await r.json();
-      if(!r.ok || j.ok===false) throw new Error(j.error || ("worker "+r.status));
+      // The response may not be JSON at all if the edge timed out mid-send.
+      var j = null;
+      try{ j = await r.json(); }catch(_){ j = null; }
+      // The worker refuses a repeat send for a week it has already completed.
+      if(r.status===409 && j && j.already_sent){
+        state.className = "sum-state ok";
+        state.textContent = "Already sent for this week ("+j.sent+" clients, "+
+                            new Date(j.at).toLocaleString()+"). Nothing sent again.";
+        btn.textContent = "Sent";
+        await markSummarySent(_summary);
+        return;
+      }
+      if(!r.ok || !j || j.ok===false) throw new Error((j && j.error) || ("worker "+r.status));
       state.className = "sum-state ok";
       state.textContent = "Sent to "+j.sent+" clients.";
       btn.textContent = "Sent";
       await markSummarySent(_summary);
     }catch(e){
+      // NEVER claim nothing went out. On 22 Aug 2026 this message said exactly
+      // that after a send which had in fact completed, so every client got a
+      // second email on the retry. We cannot see the worker from here.
       state.className = "sum-state warn";
-      state.textContent = "Send failed: "+e.message+". Nothing went out.";
-      btn.disabled = false; btn.textContent = "Send";
+      state.textContent = "Lost contact before the worker replied ("+e.message+
+                          "). The emails may well have gone. Check Brevo before "+
+                          "pressing Send again — the worker will refuse a repeat anyway.";
+      btn.disabled = false; btn.textContent = "Send again";
     }
   };
 }
