@@ -2087,7 +2087,7 @@ async function checkSummary(doc){
   var r = await fetch(WORKER+"/summaries", {
     method:"POST",
     headers:{ "x-jb-admin":at, "content-type":"application/json" },
-    body: JSON.stringify({ week: doc.wc, subject: doc.subject, items: doc.items, dry: true })
+    body: JSON.stringify({ week: doc.wc, subject: doc.subject, items: doc.items, dry: true, ...(doc.intro ? {intro: doc.intro} : {}) })
   });
   if(!r.ok) throw new Error("worker "+r.status);
   return await r.json();
@@ -2131,7 +2131,8 @@ async function renderSummaries(){
         method:"POST",
         headers:{ "x-jb-admin":adminTok(), "content-type":"application/json" },
         body: JSON.stringify({ week:_summary.wc, subject:_summary.subject,
-                               items:_summary.items, dry:false })
+                               items:_summary.items, dry:false,
+                               ...(_summary.intro ? {intro:_summary.intro} : {}) })
       });
       var j = await r.json();
       if(!r.ok || j.ok===false) throw new Error(j.error || ("worker "+r.status));
