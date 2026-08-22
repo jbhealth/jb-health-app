@@ -2075,10 +2075,16 @@ async function fetchSummary(){
   var files = (await r.json()).filter(function(f){ return /\.json$/.test(f.name); });
   if(!files.length) return null;
   files.sort(function(a,b){ return a.name < b.name ? 1 : -1; });
-  var g = await fetch(files[0].download_url, {headers:h});
-  if(!g.ok) return null;
-  var doc = await g.json();
-  return doc.sent ? null : doc;                // already sent, nothing to show
+  // Newest UNSENT file, not just the newest file. A stale one-off (a test, a
+  // resend) sorting above a real week used to hide it completely and the tab
+  // just looked empty. Walk down until we find one still waiting. 22 Aug 2026.
+  for(var i=0; i<files.length; i++){
+    var g = await fetch(files[i].download_url, {headers:h});
+    if(!g.ok) continue;
+    var doc = await g.json();
+    if(!doc.sent) return doc;
+  }
+  return null;                                 // nothing waiting to send
 }
 
 /* Dry run: are all the codes still resolvable? */
