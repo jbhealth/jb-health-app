@@ -2146,15 +2146,17 @@ async function renderSummaries(){
       // The worker refuses a repeat send for a week it has already completed.
       if(r.status===409 && j && j.already_sent){
         state.className = "sum-state ok";
-        state.textContent = "Already sent for this week ("+j.sent+" clients, "+
-                            new Date(j.at).toLocaleString()+"). Nothing sent again.";
+        state.textContent = "Every client already had this week's email ("+
+                            j.skipped+" skipped). Nothing sent again.";
         btn.textContent = "Sent";
         await markSummarySent(_summary);
         return;
       }
       if(!r.ok || !j || j.ok===false) throw new Error((j && j.error) || ("worker "+r.status));
       state.className = "sum-state ok";
-      state.textContent = "Sent to "+j.sent+" clients.";
+      state.textContent = "Sent to "+j.sent+" client"+(j.sent===1?"":"s")+
+                          ((j.skipped && j.skipped.length) ? ", "+j.skipped.length+" already had it" : "")+
+                          ((j.failed && j.failed.length) ? ". "+j.failed.length+" FAILED, press Send again to retry just those." : ".");
       btn.textContent = "Sent";
       await markSummarySent(_summary);
     }catch(e){
