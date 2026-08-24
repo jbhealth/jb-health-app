@@ -1955,7 +1955,7 @@ var _pending=[];
 function adminTok(){ return lsGet("jbh_admin")||""; }
 function setAdminTok(){ var t=prompt("Paste the endpoint admin token:", adminTok()); if(t!=null){ lsSet("jbh_admin", t.trim()); requestNotifPerm(); loadPending(); } }
 function fmtDate(iso){ var m=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p=String(iso).split("-"); return parseInt(p[2],10)+" "+m[parseInt(p[1],10)-1]+" "+p[0]; }
-function updatePendingBadge(n){ var b=document.getElementById("pbadge"); if(!b) return; if(n>0){ b.textContent=n; b.classList.add("show"); 
+function updatePendingBadge(n){ var b=document.getElementById("pbadge"); if(!b) return; if(n>0){ b.textContent="\u2022"; b.classList.add("show"); 
   var b2=document.getElementById("pbadge-bn"); if(b2){ if(n>0){ b2.textContent=n; b2.classList.add("show"); } else { b2.classList.remove("show"); } }
 } else { b.classList.remove("show"); } }
 function weightsUrl(code){ return "https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/weights/"+encodeURIComponent("weights-"+code+".json"); }
@@ -2271,7 +2271,7 @@ async function onReject(i){
 
 
 /* ---- home-screen badge for pending items (App Badging API) ---- */
-function osBadge(n){ try{ if("setAppBadge" in navigator){ if(n>0){ navigator.setAppBadge(n); } else if("clearAppBadge" in navigator){ navigator.clearAppBadge(); } } }catch(e){} }
+function osBadge(n){ try{ if("setAppBadge" in navigator){ if(n>0){ navigator.setAppBadge(); } else if("clearAppBadge" in navigator){ navigator.clearAppBadge(); } } }catch(e){} }
 function requestNotifPerm(){ try{ if("Notification" in window && Notification.permission==="default"){ Notification.requestPermission(); } }catch(e){} }
 /* ── Push notifications (build step 7½) ──
    Registration is lazy and harmless: the SW is network-first for the page, so
@@ -2313,8 +2313,10 @@ async function enableNotifs(){
     await navigator.serviceWorker.ready;
     var pubR=await fetch(WORKER+"/vapid-pub"); var pub=(await pubR.json()).key;
     var toBytes=function(s){ s=s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4)s+="="; var bin=atob(s); return Uint8Array.from(bin,function(c){return c.charCodeAt(0);}); };
+    var want=toBytes(pub);
     var sub=await reg.pushManager.getSubscription();
-    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:toBytes(pub)});
+    if(sub){ var have=sub.options&&sub.options.applicationServerKey?new Uint8Array(sub.options.applicationServerKey):null; var same=have&&have.length===want.length&&have.every(function(v,i){return v===want[i];}); if(!same){ try{await sub.unsubscribe();}catch(e){} sub=null; } }
+    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:want});
     var r=await fetch(WORKER+"/subscribe",{method:"POST",headers:{"x-jb-admin":adminTok(),"content-type":"application/json"},body:JSON.stringify({subscription:sub.toJSON()})});
     var j=await r.json();
     if(!j.ok) throw new Error(j.error||"subscribe failed");
@@ -2326,7 +2328,7 @@ async function enableNotifs(){
 async function refreshBadge(){ if(!adminTok()){ osBadge(0); return; } try{ var items=await fetchPending(); var n=items.length; try{ n+=(await fetchIntakes()).length; }catch(e){} osBadge(n); updatePendingBadge(n); }catch(e){} }
 /* badge on open, then keep it fresh while the app is open (background updates need Web Push) */
 setTimeout(function(){ requestNotifPerm(); refreshBadge(); }, 1500);
-setInterval(function(){ if(document.visibilityState==="visible") refreshBadge(); }, 60000);
+/* no polling: background updates arrive by Web Push; badge refreshes on open/foreground only */
 document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); foregroundRefresh(); } else { osBadge(_pending.length); } });
 window.addEventListener("pagehide", function(){ osBadge(_pending.length); });
 
