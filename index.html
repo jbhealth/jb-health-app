@@ -1559,6 +1559,234 @@ async function openMaster(code){
   }catch(e){ setSave("warn","Couldn\u2019t reach GitHub."); }
 }
 
+/* -- Editor runtime rescue (24 Aug 2026) ------------------------------------
+   The master's editor script (tabs, _enhanceCards, add/insert/remove, note
+   persistence, bakeForExport) historically lives INSIDE each saved master
+   file, so a template rebuild that strips scripts kills the editor: no add
+   button, no Client tab, and export itself breaks (22 Aug: Carrie). The app
+   now owns a canonical copy. If a loaded master has no runtime, this injects
+   it WITHOUT data-appinject so it survives export -- the next Push to Git
+   heals the file. If the file has its script, nothing is touched. */
+var EDITOR_RUNTIME = `
+const CLIENT_CODE = '__CODE__';
+const CLIENT_STREAM = '__STREAM__';
+function lsKey(k){ var p=(typeof CLIENT_STREAM!=='undefined' && CLIENT_STREAM==='online')?'OL_':'JB_'; return p + CLIENT_CODE + ':' + k; }
+// Holds the git-baked text of each note so we can tell a live scratch edit from a stale leftover.
+var _bakedNote = new WeakMap();
+
+function showClient(btn) {
+  document.querySelectorAll('.program-panel, .client-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('client-panel').classList.add('active');
+  btn.classList.add('active');
+}
+
+function showProgram(index, btn) {
+  const panels = document.querySelectorAll('.program-panel, .client-panel');
+  const btns = document.querySelectorAll('.tab-btn');
+  panels.forEach(p => p.classList.remove('active'));
+  btns.forEach(b => b.classList.remove('active'));
+  const target = document.getElementById('program-' + index);
+  if (target) { target.classList.add('active'); btn.classList.add('active'); }
+}
+
+function removeExercise(btn) { btn.parentElement.remove(); }
+
+// --- Collapsible coaching cues (Start / Focus / Movement) ---
+function cueKey(){ return lsKey('cues-hidden'); }
+function cuesHidden(){ try { return localStorage.getItem(cueKey()) === '1'; } catch(e){ return false; } }
+function detailCards(){
+  return Array.from(document.querySelectorAll('.exercise-card'))
+    .filter(c => c.querySelector('.ex-desc') || c.querySelector('.ex-note'));
+}
+function applyCues(hidden){
+  detailCards().forEach(c => c.classList.toggle('collapsed', hidden));
+  document.querySelectorAll('.cue-toggle').forEach(b => {
+    b.textContent = hidden ? 'Show coaching cues' : 'Hide coaching cues';
+  });
+}
+function toggleCard(card){ card.classList.toggle('collapsed'); }
+function initCues(){
+  detailCards().forEach(card => {
+    const top = card.querySelector('.ex-top'); if (!top) return;
+    let ch = top.querySelector('.ex-collapse-chevron');
+    if (!ch) {
+      ch = document.createElement('span');
+      ch.className = 'ex-collapse-chevron'; ch.textContent = '\u2304';
+      ch.setAttribute('aria-label', 'Toggle details');
+      top.insertBefore(ch, top.firstChild);
+    }
+    ch.onclick = e => { e.stopPropagation(); toggleCard(card); };
+    const nm = card.querySelector('.ex-name');
+    if (nm) { nm.style.cursor = 'pointer'; nm.onclick = () => toggleCard(card); }
+  });
+  document.querySelectorAll('.program-panel').forEach(panel => {
+    const hasDetail = panel.querySelector('.ex-desc') || panel.querySelector('.ex-note');
+    const header = panel.querySelector('.program-header');
+    if (hasDetail && header) {
+      let btn = header.querySelector('.cue-toggle');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'cue-toggle';
+        header.appendChild(btn);
+      }
+      btn.onclick = () => {
+        const next = !cuesHidden();
+        try { localStorage.setItem(cueKey(), next ? '1' : '0'); } catch(e){}
+        applyCues(next);
+      };
+    }
+  });
+  document.querySelectorAll('.badge-weight.placeholder').forEach(p => {
+    p.onfocus = () => { if (p.classList.contains('placeholder')) { p.textContent = ''; p.classList.remove('placeholder'); } };
+  });
+  applyCues(cuesHidden());
+}
+
+function _cardHTML() {
+  return '<button class="insert-ex-btn" onclick="insertExerciseAbove(this)">+ Insert exercise above</button>' +
+    '<button class="remove-ex-btn" onclick="removeExercise(this)" aria-label="Remove">x</button>' +
+    '<div class="ex-top"><input type="text" class="ex-name-input" placeholder="Exercise name" />' +
+    '<div class="ex-badges"><input type="text" class="badge-input" placeholder="3 x 10" /><input type="text" class="badge-input" placeholder="weight" /></div></div>' +
+    '<div class="trainer-notes-wrap"><div class="trainer-notes-label">Trainer Notes</div>' +
+    '<textarea class="trainer-note-input" placeholder="Notes..."></textarea></div>';
+}
+function _newCard(section) {
+  const card = document.createElement('div');
+  card.className = 'exercise-card ' + (section || 'main');
+  card.innerHTML = _cardHTML();
+  return card;
+}
+function addExercise(btn, section) {
+  btn.parentElement.insertBefore(_newCard(section), btn);
+}
+function insertExerciseAbove(btn) {
+  const card = btn.closest('.exercise-card');
+  if (!card) return;
+  const section = card.className.split(' ').filter(c => c !== 'exercise-card').join(' ') || 'main';
+  card.parentElement.insertBefore(_newCard(section), card);
+}
+function _makePill(span) {
+  span.onclick = function() {
+    if (span.getAttribute('contenteditable') === 'true') return;
+    span.setAttribute('contenteditable', 'true'); span.focus();
+    const r = document.createRange(); r.selectNodeContents(span);
+    const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  };
+  span.onblur = function() { span.removeAttribute('contenteditable'); };
+  span.onkeydown = function(e) { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); span.blur(); } };
+}
+function _enhanceCards() {
+  document.querySelectorAll('.exercise-card').forEach(function(card) {
+    if (!card.querySelector('.insert-ex-btn')) {
+      const b = document.createElement('button');
+      b.className = 'insert-ex-btn';
+      b.textContent = '+ Insert exercise above';
+      b.setAttribute('onclick', 'insertExerciseAbove(this)');
+      card.insertBefore(b, card.firstChild);
+    }
+    card.querySelectorAll('.badge-sets, .badge-weight').forEach(_makePill);
+  });
+  var _archiveIdx = null;
+  var _at = document.querySelector('.tab-btn.archive-tab');
+  if (_at) { var _m = (_at.getAttribute('onclick') || '').match(/showProgram\((\d+)/); if (_m) _archiveIdx = _m[1]; }
+  document.querySelectorAll('.program-panel').forEach(function(panel){
+    if (panel.getAttribute('data-static') === 'true') return;
+    if (_archiveIdx !== null && panel.id === 'program-' + _archiveIdx) return;
+    if (panel.querySelector(':scope > .add-exercise-btn')) return;
+    var b = document.createElement('button');
+    b.className = 'add-exercise-btn';
+    b.textContent = '+ Add exercise';
+    b.setAttribute('onclick', "addExercise(this, 'main')");
+    panel.appendChild(b);
+  });
+}
+
+// Restore any locally-saved notes/session count on open (namespaced by client code)
+function autoGrowNote(ta){ ta.style.height='auto'; ta.style.height=(ta.scrollHeight+2)+'px'; }
+function _jbInitEditor() {
+  document.querySelectorAll('.trainer-note-input, .session-note-input').forEach(function(ta){
+    // The note baked in from git is the source of truth. Remember it, then only restore a
+    // locally-saved scratch edit if it was saved against this exact baked text. If it wasn't
+    // (the slot now holds a different exercise, or the note was rebuilt) it is a stale leftover
+    // and gets discarded. This stops an old note reappearing on the wrong exercise.
+    var baked = ta.value;
+    _bakedNote.set(ta, baked);
+    if (ta.dataset.key) {
+      try {
+        var raw = localStorage.getItem(lsKey(ta.dataset.key));
+        if (raw !== null) {
+          var saved = null; try { saved = JSON.parse(raw); } catch(e){}
+          if (saved && typeof saved === 'object' && 'base' in saved && saved.base === baked) {
+            ta.value = saved.val;                        // genuine unsaved edit for this exact note
+          } else {
+            localStorage.removeItem(lsKey(ta.dataset.key));  // stale slot reuse or legacy value -> prune
+          }
+        }
+      } catch(e){}
+    }
+    autoGrowNote(ta); ta.addEventListener('input', function(){ autoGrowNote(ta); });
+  });
+  _enhanceCards();
+  initCues();
+  document.querySelectorAll('.archive-month-header').forEach(function(header){
+    header.onclick = function(e){ e.stopPropagation(); this.parentElement.classList.toggle('open'); };
+  });
+}
+if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _jbInitEditor); }
+else { _jbInitEditor(); }
+
+// Save edits into browser storage (scratch persistence on this device/browser)
+function saveMaster() {
+  document.querySelectorAll('.trainer-note-input, .session-note-input').forEach(function(ta){
+    if (ta.dataset.key) {
+      try {
+        var base = _bakedNote.has(ta) ? _bakedNote.get(ta) : ta.value;
+        localStorage.setItem(lsKey(ta.dataset.key), JSON.stringify({ base: base, val: ta.value }));
+      } catch(e){}
+    }
+  });
+  const btn = document.getElementById('saveBtn');
+  if (btn) { const t = btn.textContent; btn.textContent = 'Saved ✓'; setTimeout(function(){ btn.textContent = t; }, 1200); }
+}
+
+// CRITICAL: bake live field values into the DOM so they survive serialization.
+// Typed textarea/input values are NOT captured by outerHTML unless written back first.
+function bakeForExport() {
+  document.querySelectorAll('[contenteditable]').forEach(function(el){ el.removeAttribute('contenteditable'); });
+  document.querySelectorAll('.trainer-note-input, .session-note-input').forEach(function(ta){ ta.style.removeProperty('height'); });
+  document.querySelectorAll('textarea').forEach(function(ta){ ta.textContent = ta.value; });
+  document.querySelectorAll('input').forEach(function(inp){ inp.setAttribute('value', inp.value); });
+}
+
+function downloadMaster() {
+  bakeForExport();
+  const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  const blob = new Blob([html], { type: 'text/html' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.download = '__FNAME__';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+`;
+function ensureEditorRuntime(doc, code){
+  try{
+    if (typeof (doc.defaultView||{})._enhanceCards === "function") return false;
+    var src = EDITOR_RUNTIME
+      .replace("__CODE__", bareCode(code))
+      .replace("__STREAM__", prefixFor(code)==="OL_" ? "online" : "in-person")
+      .replace("__FNAME__", masterPath(code));
+    var sc = doc.createElement("script");        /* no data-appinject: persists on export, heals the file */
+    sc.textContent = src;
+    doc.body.appendChild(sc);
+    return true;
+  }catch(e){ return false; }
+}
+
 function loadMasterIntoFrame(mhtml, code){
   var fr=document.getElementById("progFrame");
   if(window._progBlob){ URL.revokeObjectURL(window._progBlob); }
@@ -1566,6 +1794,7 @@ function loadMasterIntoFrame(mhtml, code){
   fr.onload=function(){
     try{
       var doc=fr.contentDocument;
+      var _healed = ensureEditorRuntime(doc, code);
       if(!doc.getElementById("jbAppInjectCSS")){ var st=doc.createElement("style"); st.id="jbAppInjectCSS"; st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.trainer-note-input,.session-note-input,.client-cue-input{overflow:hidden;line-height:1.5;min-height:46px;}.client-cue-wrap{margin-top:10px;}.client-cue-label{font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#2E86C1;margin-bottom:4px;}.client-cue-input{width:100%;box-sizing:border-box;border:1px solid #D4E4F0;border-radius:6px;font-size:12px;padding:6px;font-family:inherit;background:#F4FAFE;}.client-cue-wrap.jb-cue-hidden{display:none;}.jb-cue-btn{margin-top:8px;background:transparent;border:1px dashed #2E86C1;color:#2E86C1;border-radius:14px;padding:4px 11px;font-size:11px;cursor:pointer;}.jb-foot{margin:24px 20px calc(28px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:var(--grey);}.jb-foot a{color:var(--blue);text-decoration:none;font-weight:600;}"; doc.head.appendChild(st); }
       if(doc.body && !doc.querySelector(".jb-foot")){ var ft=doc.createElement("div"); ft.className="jb-foot"; ft.setAttribute("data-appinject","1"); ft.innerHTML='JB Health \u00b7 <a href="https://jbhealth.co.uk" target="_blank" rel="noopener">jbhealth.co.uk</a>'; doc.body.appendChild(ft); }
       try{ var _grow=function(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px"; };
@@ -1574,6 +1803,7 @@ function loadMasterIntoFrame(mhtml, code){
       doc.addEventListener("input", function(){ scheduleDraft(code); }, true);
       doc.addEventListener("click", function(){ scheduleDraft(code); }, true);
       doc.addEventListener("blur", function(){ scheduleDraft(code); }, true);   /* save the moment you click out of a pill */
+      if(_healed) setTimeout(function(){ setSave("warn","This master was missing its editor script \u2014 restored. Push to Git to heal the file."); }, 50);
     }catch(e){}
   };
   fr.src=window._progBlob;
