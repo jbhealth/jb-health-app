@@ -2827,76 +2827,48 @@ function pushTodayJson(){
   .catch(function(e){ out.innerHTML='<div class="empty-hist">Push failed ('+e.message+').</div>'; });
 }
 
-/* VAT watch — JS port of masters/system/vat_watch.py (thresholds and rules mirrored).
-   Baseline months from jb-health-data/vat-baseline.json + Income txns from the synced
-   ledger. Only vatScope "outside_scope" is excluded; zero-rated still counts. */
-var VAT={THRESHOLD:90000,DEREG:88000,AMBER:72000,RED:80000};
-function vatPrevMonth(ym){var y=parseInt(ym.slice(0,4),10),m=parseInt(ym.slice(5,7),10)-1;if(m===0){y-=1;m=12;}return y+"-"+String(m).padStart(2,"0");}
-function vatNextMonth(ym){var y=parseInt(ym.slice(0,4),10),m=parseInt(ym.slice(5,7),10)+1;if(m===13){y+=1;m=1;}return y+"-"+String(m).padStart(2,"0");}
-function vatWindow(asof){var keys=[],cur=asof;for(var i=0;i<12;i++){keys.push(cur);cur=vatPrevMonth(cur);}return keys.reverse();}
+/* VAT watch — ONE COPY (24 Aug 2026): the maths lives solely in
+   masters/system/vat_check.js (also run by the roundup via node). The app
+   fetches it, caches it, and only renders the result here. Never re-port. */
+var _vatMod=null;
+function loadVatCheck(){
+  if(_vatMod||window.vatCompute) return Promise.resolve(true);
+  var cached=lsGet("jbh_vatcheck");
+  return fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/vat_check.js?ref="+PCFG.branch,{headers:progHeaders()})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(j){ var src=b64ToUtf8(j.content); lsSet("jbh_vatcheck",src); (new Function(src))(); _vatMod=true; return true; })
+    .catch(function(){ if(cached){ (new Function(cached))(); _vatMod=true; return true; } return false; });
+}
 function vatGBP(n){return "\u00A3"+Math.round(n).toLocaleString("en-GB");}
+function ragCol(s){return s==="RED"?"var(--red)":s==="AMBER"?"var(--amber)":"var(--green)";}
 function runVatCheck(){
   var body=document.getElementById("vatBody"),out=document.getElementById("vatResult");
   body.style.display="block";
   out.innerHTML='<div class="empty-hist">Checking\u2026</div>';
   var tok=progToken();
   if(!tok){out.innerHTML='<div class="empty-hist">Set your GitHub token first (Programs tab).</div>';return;}
-  fetch("https://api.github.com/repos/jbhealth/jb-health-data/contents/vat-baseline.json?ref=main&t="+Date.now(),{headers:progHeaders(),cache:"no-store"})
-  .then(function(r){if(!r.ok)throw new Error(r.status===401||r.status===403?"GitHub refused the token ("+r.status+")":"baseline "+r.status);return r.json();})
-  .then(function(d){
-    var base=JSON.parse(atob(d.content.replace(/\n/g,"")));
-    var months={};
-    Object.keys(base.monthly_taxable_turnover||{}).forEach(function(ym){months[ym]=(months[ym]||0)+Number(base.monthly_taxable_turnover[ym]||0);});
-    var excluded=0;
-    (finance.txns||[]).forEach(function(t){
-      if(t.type!=="Income")return;
-      var amt=Number(t.amountPre||0)*Number(t.pct==null?100:t.pct)/100;
-      var ym=(t.date||"").slice(0,7);
-      if(!ym)return;
-      if(t.vatScope==="outside_scope"){excluded+=amt;return;}
-      months[ym]=(months[ym]||0)+amt;
-    });
-    var now=new Date(),curYm=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
-    var asof=vatPrevMonth(curYm),win=vatWindow(asof);
-    var rolling=win.reduce(function(s,k){return s+(months[k]||0);},0);
-    var recent=win.slice(-3).map(function(k){return months[k]||0;});
-    var nz=recent.filter(function(r){return r;}).length||1;
-    var runRate=recent.reduce(function(a,b){return a+b;},0)/nz;
-    var status,note,col;
-    if(rolling>=VAT.RED){status="RED";note="Decide now: cap hours or reposition prices.";col="var(--red)";}
-    else if(rolling>=VAT.AMBER){status="AMBER";note="Watch monthly. Plan the price and capacity call.";col="var(--amber)";}
-    else{status="GREEN";note="No action needed.";col="var(--green)";}
-    /* Forward look: next 12 months at the 3-month run rate. Twelve months out every
-       month in the rolling window has been replaced by a run-rate month, so this is
-       also where the rolling total lands if trading holds steady. */
-    var forward=runRate*12,fwdHead=VAT.THRESHOLD-forward,fwdStatus,fwdCol;
-    if(forward>=VAT.RED){fwdStatus="RED";fwdCol="var(--red)";}
-    else if(forward>=VAT.AMBER){fwdStatus="AMBER";fwdCol="var(--amber)";}
-    else{fwdStatus="GREEN";fwdCol="var(--green)";}
-    /* Monthly ceiling: sustain below THRESHOLD/12 and the rolling total never crosses,
-       however long you run. The number to steer by month to month. */
-    var ceiling=VAT.THRESHOLD/12,ceilHead=ceiling-runRate,ceilCol=ceilHead>=0?"var(--green)":"var(--red)";
-    var crossing=null,proj=rolling,cur=asof;
-    for(var i=1;i<=36;i++){
-      cur=vatNextMonth(cur);
-      var oldest=vatWindow(cur)[0];
-      var dropped=(months[oldest]!==undefined)?months[oldest]:runRate;
-      proj=proj+runRate-dropped;
-      if(proj>VAT.THRESHOLD){crossing=cur;break;}
-    }
+  Promise.all([
+    loadVatCheck(),
+    fetch("https://api.github.com/repos/jbhealth/jb-health-data/contents/vat-baseline.json?ref=main&t="+Date.now(),{headers:progHeaders(),cache:"no-store"})
+      .then(function(r){if(!r.ok)throw new Error(r.status===401||r.status===403?"GitHub refused the token ("+r.status+")":"baseline "+r.status);return r.json();})
+  ])
+  .then(function(res){
+    if(!res[0]||typeof window.vatCompute!=="function") throw new Error("vat_check.js unavailable (offline, no cache)");
+    var base=JSON.parse(atob(res[1].content.replace(/\n/g,"")));
+    var r=window.vatCompute(base.monthly_taxable_turnover||{},(finance.txns||[]),null);
     function row(l,v){return '<div class="mini-row"><span>'+l+'</span><span>'+v+'</span></div>';}
-    var html='<div style="font-weight:700;color:'+col+';font-size:15px;margin-bottom:6px">'+status+' \u2014 '+note+'</div>';
-    html+=row("Window",win[0]+" to "+win[11]);
-    html+=row("Taxable turnover",vatGBP(rolling));
-    html+=row("Threshold",vatGBP(VAT.THRESHOLD));
-    html+=row("Headroom",vatGBP(VAT.THRESHOLD-rolling));
-    html+=row("3-month run rate",vatGBP(runRate)+"/month");
-    html+=row("Monthly ceiling",vatGBP(ceiling)+"/month");
-    html+=row(ceilHead>=0?"Room per month":"OVER ceiling by",'<span style="color:'+ceilCol+';font-weight:600">'+vatGBP(Math.abs(ceilHead))+"</span>");
-    if(excluded)html+=row("Excluded (out of scope)",vatGBP(excluded));
-    html+=row("Next 12m at that rate",'<span style="color:'+fwdCol+';font-weight:600">'+vatGBP(forward)+"</span>");
-    html+=row(fwdHead>=0?"Under threshold by":"OVER threshold by",vatGBP(Math.abs(fwdHead)));
-    html+=row("Projected crossing",crossing||"not within 3 years at this rate");
+    var html='<div style="font-weight:700;color:'+ragCol(r.status)+';font-size:15px;margin-bottom:6px">'+r.status+' \u2014 '+r.note+'</div>';
+    html+=row("Window",r.window);
+    html+=row("Taxable turnover",vatGBP(r.rolling_12m));
+    html+=row("Threshold",vatGBP(r.threshold));
+    html+=row("Headroom",vatGBP(r.headroom));
+    html+=row("3-month run rate",vatGBP(r.run_rate_3m)+"/month");
+    html+=row("Monthly ceiling",vatGBP(r.monthly_ceiling)+"/month");
+    html+=row(r.monthly_headroom>=0?"Room per month":"OVER ceiling by",'<span style="color:'+(r.monthly_headroom>=0?"var(--green)":"var(--red)")+';font-weight:600">'+vatGBP(Math.abs(r.monthly_headroom))+"</span>");
+    if(r.excluded_outside_scope)html+=row("Excluded (out of scope)",vatGBP(r.excluded_outside_scope));
+    html+=row("Next 12m at that rate",'<span style="color:'+ragCol(r.forward_status)+';font-weight:600">'+vatGBP(r.forward_12m)+"</span>");
+    html+=row(r.forward_headroom>=0?"Under threshold by":"OVER threshold by",vatGBP(Math.abs(r.forward_headroom)));
+    html+=row("Projected crossing",r.projected_crossing||"not within 3 years at this rate");
     out.innerHTML=html;
   })
   .catch(function(e){out.innerHTML='<div class="empty-hist">VAT check failed ('+e.message+').</div>';});
