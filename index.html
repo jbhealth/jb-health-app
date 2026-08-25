@@ -2036,7 +2036,9 @@ async function approveItem(it, say){
   /* poll the outcome the Action writes to masters. Fast at first (a clean
      ingest lands in 30-60s), then easier, and it says what it is doing the
      whole way instead of sitting on one word. */
-  for(var i=0;i<60;i++){
+  /* cap 3:00 — a clean ingest lands in 30-60s, so past two minutes it has
+     failed and the rest is just waiting to be told. 10x3s + 15x6s + 6x10s. */
+  for(var i=0;i<31;i++){
     var wait=(i<10?3000:(i<25?6000:10000));
     await new Promise(function(res){ setTimeout(res,wait); });
     say("Matching and archiving\u2026 "+el());
