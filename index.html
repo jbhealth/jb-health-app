@@ -2017,8 +2017,11 @@ async function resolvePending(key){
    archive block, banks the store, and republishes the client — or flags and
    writes NOTHING, leaving the item pending for the roundup. Dispatch failure
    falls back to the legacy bank-only path so a GitHub wobble never blocks you. */
-async function approveItem(it){
-  var since=Math.floor(Date.now()/1000)-5;
+async function approveItem(it, say){
+  say=say||function(){};
+  var since=Math.floor(Date.now()/1000)-5, t0=Date.now();
+  function el(){ var s=Math.round((Date.now()-t0)/1000); return Math.floor(s/60)+":"+("0"+(s%60)).slice(-2); }
+  say("Sending to the ingest\u2026");
   try{
     var r=await fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/actions/workflows/ingest.yml/dispatches",{
       method:"POST",headers:progHeaders(),
@@ -2030,16 +2033,24 @@ async function approveItem(it){
     alert("Ingest Action unavailable ("+e.message+") \u2014 banked to the weight store only; the roundup will archive it as before.");
     return;
   }
-  /* poll the outcome the Action writes to masters */
-  for(var i=0;i<24;i++){
-    await new Promise(function(res){ setTimeout(res,10000); });
+  /* poll the outcome the Action writes to masters. Fast at first (a clean
+     ingest lands in 30-60s), then easier, and it says what it is doing the
+     whole way instead of sitting on one word. */
+  for(var i=0;i<60;i++){
+    var wait=(i<10?3000:(i<25?6000:10000));
+    await new Promise(function(res){ setTimeout(res,wait); });
+    say("Matching and archiving\u2026 "+el());
     try{
       var rr=await fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/ingest-last.json?ref="+PCFG.branch+"&t="+Date.now(),{headers:progHeaders()});
       if(!rr.ok) continue;
       var res=JSON.parse(b64ToUtf8((await rr.json()).content));
       if(res.ts<since||res.code!==it.code) continue;
       if(res.status==="ok"){
+        var n=(res.blocks||[]).length, rep=(res.republish||[])[0];
+        say("Archived "+n+" block"+(n===1?"":"s")+(res.late&&res.late.length?" (late log)":"")+
+            ", page republished"+(rep&&rep.status&&rep.status.indexOf("ok")!==0?" \u2014 "+rep.status:"")+" \u2713");
         await resolvePending(it.key);
+        await new Promise(function(r){ setTimeout(r,1200); });
         return;
       }
       throw new Error("left for the roundup \u2014 "+(res.reason||"needs judgement"));
@@ -2047,7 +2058,7 @@ async function approveItem(it){
       if(String(e.message).indexOf("roundup")>-1) throw e;
     }
   }
-  throw new Error("Action still running \u2014 check back shortly; the item stays pending");
+  throw new Error("no result after "+el()+" \u2014 the run is slow or it failed. Item stays pending; check the Action.");
 }
 
 /* Legacy path: bank-only into the weight store (archive waits for the roundup).
@@ -2280,6 +2291,7 @@ async function loadPending(){
       return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span><b class="pl-wv">'+shown+'</b><input class="pl-w" type="number" step="0.5" min="0" max="300" placeholder="\u2014" value="'+val+'">kg</span><i>'+esc(r.program||"")+d+'</i></div>';
     }).join("");
     return '<div class="pl-card" id="plc-'+i+'"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
+      '<div class="statusline" id="plst-'+i+'" style="display:none"></div>'+
       '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
   }).join("");
 }
@@ -2288,9 +2300,19 @@ function readEdits(i){ var c=document.getElementById("plc-"+i); if(!c) return; v
 async function onApprove(i, btn){
   var it=_pending[i]; if(!it) return;
   readEdits(i);
-  btn.disabled=true; btn.textContent="Saving\u2026";
-  try{ await approveItem(it); await loadPending(); }
-  catch(e){ btn.disabled=false; btn.textContent="Approve"; alert("Approve failed: "+e.message); }
+  var line=document.getElementById("plst-"+i);
+  function say(msg, kind){
+    if(!line) return;
+    line.style.display="";
+    line.className="statusline"+(kind?" "+kind:"");
+    line.textContent=msg;
+  }
+  btn.disabled=true; btn.textContent="Working\u2026";
+  try{ await approveItem(it, say); await loadPending(); }
+  catch(e){
+    btn.disabled=false; btn.textContent="Approve";
+    say("Not archived: "+e.message, "warn");
+  }
 }
 async function onReject(i){
   var it=_pending[i]; if(!it) return;
