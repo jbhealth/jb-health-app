@@ -871,10 +871,12 @@ function render(){
   var q=(document.getElementById("search").value||"").toLowerCase();
   var openNodes=document.querySelectorAll("#view-sessions .client.open"),open={};
   for(var k=0;k<openNodes.length;k++){ open[openNodes[k].getAttribute("data-code")]=1; }
+  /* Section collapse state: live DOM wins, otherwise the remembered choice from last
+     launch. Default has Settled shut so the money owed is what you land on. */
+  var secShut=sesSecState();
   var roster=[]; for(var code in data){ roster.push([code,data[code].name||code]); }
   roster.sort(function(a,b){ return a[1].localeCompare(b[1]); });
-  var html="";
-  for(var r=0;r<roster.length;r++){ var code=roster[r][0],name=roster[r][1]; if(name.toLowerCase().indexOf(q)===-1) continue;
+  function clientCard(code,name){
     var b=balance(code),cls=b>0?"credit":(b<0?"owe":"zero"),txt=b>0?(fmt(b)+" in credit"):(b<0?("owes "+fmt(-b)):"settled");
     var ents=((data[code]&&data[code].entries)||[]).slice().reverse(),hist="";
     if(ents.length){ for(var e=0;e<ents.length;e++){ var en=ents[e];
@@ -882,7 +884,7 @@ function render(){
       var meta=[en.date,en.method||""].filter(Boolean).join(" \u00b7 ");
       hist+='<div class="entry"><div class="entry-main">'+tag+'<span class="entry-meta">'+meta+'</span></div><button class="entry-del" onclick="delEntry(\''+code+'\',\''+en.id+'\')">\u2715</button></div>';
     } } else { hist='<div class="empty-hist">No entries yet — set a starting balance below.</div>'; }
-    html+='<div class="client '+(open[code]?'open':'')+'" data-code="'+code+'"><div class="client-row" onclick="this.parentElement.classList.toggle(\'open\')">'+
+    return '<div class="client '+(open[code]?'open':'')+'" data-code="'+code+'"><div class="client-row" onclick="this.parentElement.classList.toggle(\'open\')">'+
       '<span class="client-name">'+esc(name)+'</span><span class="bal '+cls+'">'+txt+'</span></div>'+
       '<div class="client-body"><div class="actions">'+
         '<button class="act pay" onclick="openPay(\''+code+'\',\''+js(name)+'\')">+ Payment (sessions in)</button>'+
@@ -890,7 +892,35 @@ function render(){
         '<button class="act setbal" onclick="openSetBal(\''+code+'\',\''+js(name)+'\')">Set balance</button>'+
       '</div><div class="hist-label">History</div>'+hist+'</div></div>';
   }
+  function sesSection(secId,label,rows){
+    if(!rows.length) return "";
+    var body=""; for(var i=0;i<rows.length;i++){ body+=clientCard(rows[i][0],rows[i][1]); }
+    var openCls=secShut[secId]?"":" open";
+    return '<div class="roster-section'+openCls+'" data-sec="'+secId+'">'+
+      '<div class="roster-head" onclick="toggleSesSection(this.parentElement)">'+
+        '<span>'+label+'</span><span class="roster-count">('+rows.length+')</span><span class="roster-chev">&#9662;</span>'+
+      '</div><div class="roster-body">'+body+'</div></div>';
+  }
+  var gOwe=[],gCredit=[],gSettled=[];
+  for(var r=0;r<roster.length;r++){ var rc=roster[r][0],rn=roster[r][1]; if(rn.toLowerCase().indexOf(q)===-1) continue;
+    var rb=balance(rc); (rb<0?gOwe:(rb>0?gCredit:gSettled)).push([rc,rn]); }
+  var html=sesSection("ses_owe","Owing",gOwe)+sesSection("ses_credit","In credit",gCredit)+sesSection("ses_settled","Settled",gSettled);
   document.getElementById("list").innerHTML=html||'<div class="empty-hist" style="padding:20px">No clients match.</div>';
+}
+/* Which session sections are shut. Live DOM first (mid-session toggles survive a
+   re-render), else the saved set, else the default of Settled shut. */
+function sesSecState(){
+  var nodes=document.querySelectorAll("#view-sessions .roster-section");
+  if(nodes.length){ var live={}; for(var i=0;i<nodes.length;i++){ if(!nodes[i].classList.contains("open")) live[nodes[i].getAttribute("data-sec")]=1; } return live; }
+  var saved=lsGet("jbh_sessec");
+  if(saved===null) return {ses_settled:1};
+  var out={}; saved.split(",").forEach(function(s){ if(s) out[s]=1; }); return out;
+}
+function toggleSesSection(el){
+  el.classList.toggle("open");
+  var shut=[],nodes=document.querySelectorAll("#view-sessions .roster-section");
+  for(var i=0;i<nodes.length;i++){ if(!nodes[i].classList.contains("open")) shut.push(nodes[i].getAttribute("data-sec")); }
+  lsSet("jbh_sessec",shut.join(","));
 }
 function openAdd(){ showModal('<h3>Add client</h3>'+
   '<div class="field"><label>Name</label><input id="a_name" placeholder="e.g. Joe B." oninput="suggestCode()"></div>'+
