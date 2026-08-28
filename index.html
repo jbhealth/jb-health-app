@@ -1752,6 +1752,18 @@ function enhanceEditor(doc){
   var curInput=null;
   function hideDD(){ dd.style.display="none"; curInput=null; }
   function _escH(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  /* Default sets badge for a freshly picked exercise, from the library's
+     prescription field ('p' in the picker, added 28 Aug 2026). Before this the
+     default was a hard-coded "3 x 10" for everything, so every timed exercise
+     picked from the dropdown arrived with a reps badge and only failed later at
+     jb_preflight.prescription_check. Wordings match the house style already in
+     the masters. An unknown or 'either' prescription keeps the old reps default. */
+  function _defSets(e){
+    var p=e&&e.p;
+    if(p==="time") return "3 x 30 sec";
+    if(p==="distance") return "3 x 30 m each";
+    return "3 x 10";
+  }
   function pick(name){
     if(!curInput) return;
     var card=curInput.closest(".exercise-card");
@@ -1761,7 +1773,7 @@ function enhanceEditor(doc){
        stub_enrich completes it at build exactly as before */
     curInput.value=name;
     try{ var reps=card&&card.querySelector(".badge-input");
-      if(reps&&!reps.value.trim()){ reps.value="3 x 10"; } }catch(err){}
+      if(reps&&!reps.value.trim()){ reps.value=_defSets(e); } }catch(err){}
     curInput.dispatchEvent(new (fr_win(doc).Event||Event)("input",{bubbles:true}));
     hideDD();
   }
@@ -1781,7 +1793,7 @@ function enhanceEditor(doc){
       });
       var dataId="p"+pid+"-ex"+n;
       var badges=stubCard.querySelectorAll(".badge-input");
-      var sets=(badges[0]&&badges[0].value.trim())||"3 x 10";
+      var sets=(badges[0]&&badges[0].value.trim())||_defSets(e);
       var weight=(badges[1]&&badges[1].value.trim())||"";
       var noteTa=stubCard.querySelector(".trainer-note-input");
       var note=noteTa?noteTa.value:"";
