@@ -2709,6 +2709,11 @@ function invWatch(){
   .catch(function(){ setTimeout(invWatch,6000); });
 }
 function invView(){
+  _inv.previewed = true;
+  var _b=document.getElementById("invSendBtn");
+  if(_b){ _b.disabled=false; _b.removeAttribute("title"); }
+  var _s=document.getElementById("invSendState");
+  if(_s){ _s.textContent="Invoice read. Send is unlocked."; }
   /* iOS won't Quick-Look a docx from a blob URL, so render a faithful HTML
      twin from the same data that built the docx — identical rows and totals —
      and confirm the real attachment is waiting on the Worker underneath. */
@@ -2774,9 +2779,66 @@ function invPoll(){
     out.innerHTML='<div class="empty-hist" style="color:var(--green)">'+res.filename+' filed \u2713</div>'
       +'<div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
       +'<button class="act edit" onclick="invView()">Read invoice</button>'
-      +'<button class="act session" onclick="window.location.href=\'shortcuts://run-shortcut?name=\'+encodeURIComponent(\'JB Invoice Mail\')">Compose email to Jules</button></div>';
+      +'<button class="act session" id="invSendBtn" disabled title="Read the invoice first" onclick="invSend()">Send to Jules</button>'
+      +'<button class="act" onclick="window.location.href=\'shortcuts://run-shortcut?name=\'+encodeURIComponent(\'JB Invoice Mail\')">Compose in Mail</button></div>'
+      +'<div class="empty-hist" id="invSendState" style="font-size:11px">Send unlocks once you have read the invoice.</div>';
   })
   .catch(function(e){ if(String(e.message).indexOf("stale")<0&&String(e.message).indexOf("wait")<0){} setTimeout(invPoll,15000); });
+}
+/* ---- send the filed invoice to Jules via Brevo ----
+   Greyed out until invView() has run: the point of the button is that James has
+   SEEN the document, not just built it. Dry-runs first and shows the recipient,
+   subject, attachment name and body, then asks before it fires. */
+function invSend(){
+  var btn=document.getElementById("invSendBtn"), st=document.getElementById("invSendState");
+  if(!btn||btn.disabled) return;
+  if(!_inv.previewed){ alert("Read the invoice first."); return; }
+  if(!_inv.ym||!_inv.number||!_inv.classes){ alert("Run a build first."); return; }
+  btn.disabled=true; if(st) st.textContent="Checking\u2026";
+  fetch(WORKER+"/invoice-send",{method:"POST",
+    headers:{"x-jb-admin":adminTok(),"content-type":"application/json"},
+    body:JSON.stringify(Object.assign({dry:true},invSendPayload()))})
+  .then(function(r){ return r.json(); })
+  .then(function(j){
+    if(!j.ok) throw new Error(j.error||"dry run failed");
+    var warn=j.already_sent?'<div class="hint" style="color:var(--red)">Already sent on '+esc(j.already_sent)+'.</div>':"";
+    showModal('<h3>Send invoice</h3>'+warn
+      +'<div class="hint">To: '+esc(j.to)+'</div>'
+      +'<div class="hint">Subject: '+esc(j.subject)+'</div>'
+      +'<div class="hint">Attachment: '+esc(j.attachment)+'</div>'
+      +'<div class="field"><textarea readonly style="min-height:150px">'+esc(j.text)+'</textarea></div>'
+      +'<div class="modal-btns"><button class="mb-cancel" onclick="closeModal();invSendReset()">Cancel</button>'
+      +'<button class="mb-ok" onclick="invSendGo()">Send it</button></div>');
+  })
+  .catch(function(e){ if(st) st.textContent=e.message; btn.disabled=false; });
+}
+function invSendPayload(){
+  var mons=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var due=new Date(Date.now()+14*86400000);
+  return { ym:_inv.ym, number:_inv.number, classes:_inv.classes.length,
+           total:_inv.classes.length*30,
+           due:due.getUTCDate()+" "+mons[due.getUTCMonth()]+" "+due.getUTCFullYear() };
+}
+function invSendReset(){
+  var btn=document.getElementById("invSendBtn"), st=document.getElementById("invSendState");
+  if(btn) btn.disabled=false;
+  if(st) st.textContent="Not sent.";
+}
+function invSendGo(){
+  closeModal();
+  var st=document.getElementById("invSendState"), btn=document.getElementById("invSendBtn");
+  if(st) st.textContent="Sending\u2026";
+  fetch(WORKER+"/invoice-send",{method:"POST",
+    headers:{"x-jb-admin":adminTok(),"content-type":"application/json"},
+    body:JSON.stringify(Object.assign({dry:false},invSendPayload()))})
+  .then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
+  .then(function(o){
+    if(o.s===409&&o.j.already_sent){ if(st) st.textContent="Already sent on "+o.j.sent_at+". Nothing sent again."; return; }
+    if(!o.j.ok) throw new Error(o.j.error||("worker "+o.s));
+    if(st) st.textContent="Sent to "+o.j.to+" \u2713";
+    if(btn) btn.textContent="Sent";
+  })
+  .catch(function(e){ if(st) st.textContent="FAILED: "+e.message; if(btn) btn.disabled=false; });
 }
 function actStub(name, needs){
   alert(name+" is not wired up yet. It needs "+needs+".");
