@@ -145,6 +145,12 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
   .fo-neg{color:#c0392b;} .fo-pos{color:#1e8449;}
   .modal-box{position:relative;}
   .sum-sub{font-size:10px;opacity:.65;margin-top:2px;white-space:nowrap;}
+  .pot-pills{display:flex;gap:8px;margin:8px 0 2px;}
+  .pot-pill{flex:1;text-align:center;font-size:12.5px;font-weight:600;color:var(--navy);background:#fff;border:1px solid var(--border);border-radius:20px;padding:11px 8px;cursor:pointer;}
+  .pot-pill small{display:block;font-size:10px;font-weight:400;opacity:.6;margin-bottom:2px;}
+  .pot-pill:active{opacity:.7;}
+  .fo-table.fo-compact th,.fo-table.fo-compact td{padding:6px 3px;font-size:12px;}
+  .fo-sched .mini-row span:first-child{flex:1;padding-right:12px;white-space:normal;text-align:left;font-weight:400;color:var(--grey);}
   .fo-x{position:absolute;top:10px;right:12px;width:30px;height:30px;border:none;border-radius:50%;background:rgba(0,0,0,0.06);font-size:17px;line-height:1;cursor:pointer;color:#444;}
 
 /* ── Mobile bottom nav (≤767px) ── */
@@ -1279,6 +1285,7 @@ var TAX_K = { TY:"2026/27", PA:12570, IT:0.20, HRATE:0.40, NI4:0.06, NI4U:0.02, 
 function dnum(s){ var p=String(s).split("-"); return Date.UTC(+p[0],+p[1]-1,+p[2]); }
 function daysBetween(a,b){ return Math.round((dnum(b)-dnum(a))/86400000); }
 function taxYearOf(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
+function n0(n){ return Math.round(Number(n)||0).toLocaleString("en-GB"); }
 function potGet(){ var p=(finance.pot||{}); return { you:Number(p.you)||0, her:Number(p.her)||0 }; }
 function taxBill(pred,curTY){ var K=TAX_K;
   var hisSL=(parseInt(curTY,10)<=parseInt(K.HIS_SL_LAST,10));
@@ -1326,20 +1333,21 @@ function openTax(){ var K=TAX_K;
   var pot=potGet(), potTot=pot.you+pot.her, gap=potTot-target;
   var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3>'+staleBox+
     '<div class="fo-proj"><div class="mini-row"><span><b>In the pot by now</b></span><span><b>'+gbp(round2(target))+'</b></span></div>'+
-      '<div class="mini-row"><span>Actual \u00b7 tap to edit</span><span>'+
-        '<span class="ratechip" onclick="closeModal();openPot()">You '+gbp(pot.you)+'</span> '+
-        '<span class="ratechip" onclick="closeModal();openPot()">Annabel '+gbp(pot.her)+'</span></span></div>'+
+      '<div class="pot-pills">'+
+        '<span class="pot-pill" onclick="closeModal();openPot()"><small>You</small>'+gbp(pot.you)+'</span>'+
+        '<span class="pot-pill" onclick="closeModal();openPot()"><small>Annabel</small>'+gbp(pot.her)+'</span></div>'+
       '<div class="mini-row"><span>Total in the pot</span><span>'+gbp(round2(potTot))+'</span></div>'+
-      '<div class="mini-row"><span>'+(gap>=0?'Ahead by':'Behind by')+'</span><span class="'+(gap>=0?'fo-pos':'fo-neg')+'">'+gbp(round2(Math.abs(gap)))+'</span></div></div>'+
+      '<div class="mini-row" style="border-bottom:none"><span>'+(gap>=0?'Ahead by':'Behind by')+'</span><span class="'+(gap>=0?'fo-pos':'fo-neg')+'">'+gbp(round2(Math.abs(gap)))+'</span></div></div>'+
     '<div class="hint">Day-based: '+days+'/365 days ('+Math.round(frac*100)+'%) of '+curTY+' elapsed, profit to date '+gbp(round2(toP))+
       ', projected full year <b>'+gbp(round2(pred))+'</b>. Target = everything accrued so far, less everything paid. Updates with every transaction.</div>'+
-    '<div class="fo-wrap"><table class="fo-table"><tr><th>'+curTY+'</th><th>In</th><th>Out</th><th>Mileage</th><th>Profit</th></tr>';
+    '<div class="fo-wrap"><table class="fo-table fo-compact"><tr><th>'+curTY+'</th><th>In</th><th>Out</th><th>Miles</th><th>Profit</th></tr>';
   months.forEach(function(mo){ var x=by[mo], p=x.inc-x.exp-x.mil, cur=(mo===curMo);
-    html+='<tr class="'+(cur?'fo-cur':'')+'"><td>'+monthLabel(mo)+(cur?' *':'')+'</td><td>'+gbp(x.inc)+'</td><td>'+gbp(x.exp)+
-      '</td><td>'+gbp(round2(x.mil))+'</td><td class="'+(p<0?'fo-neg':'fo-pos')+'">'+gbp(round2(p))+'</td></tr>'; });
+    html+='<tr class="'+(cur?'fo-cur':'')+'"><td>'+monthLabel(mo).slice(0,3)+(cur?' *':'')+'</td><td>'+n0(x.inc)+'</td><td>'+n0(x.exp)+
+      '</td><td>'+n0(x.mil)+'</td><td class="'+(p<0?'fo-neg':'fo-pos')+'">'+n0(p)+'</td></tr>'; });
   var tI=0,tE=0,tM=0; months.forEach(function(mo){ tI+=by[mo].inc; tE+=by[mo].exp; tM+=by[mo].mil; });
-  html+='<tr class="fo-avg"><td>To date</td><td>'+gbp(round2(tI))+'</td><td>'+gbp(round2(tE))+'</td><td>'+gbp(round2(tM))+
-      '</td><td class="'+(toP<0?'fo-neg':'fo-pos')+'">'+gbp(round2(toP))+'</td></tr></table></div>'+
+  html+='<tr class="fo-avg"><td>Total</td><td>'+n0(tI)+'</td><td>'+n0(tE)+'</td><td>'+n0(tM)+
+      '</td><td class="'+(toP<0?'fo-neg':'fo-pos')+'">'+n0(toP)+'</td></tr></table></div>'+
+    '<div class="hint" style="margin-top:-4px">Figures in \u00a3, rounded.</div>'+
     '<div class="fo-wrap"><table class="fo-table">'+
       '<tr><th>'+curTY+'</th><th>You</th><th>Her</th></tr>'+
       '<tr><td>Profit share</td><td>'+gbp(round2(r.jm))+'</td><td>'+gbp(round2(r.wf))+'</td></tr>'+
@@ -1350,13 +1358,12 @@ function openTax(){ var K=TAX_K;
       '<tr class="fo-avg"><td>Bill</td><td>'+gbp(round2(r.Eh))+'</td><td>'+gbp(round2(r.Ew))+'</td></tr>'+
     '</table></div>'+
     '<div class="fo-proj"><div class="mini-row"><span>Combined estimated bill ('+curTY+')</span><span>'+gbp(round2(r.E))+'</span></div></div>'+
-    '<div class="fo-wrap"><table class="fo-table"><tr><th>Payment schedule</th><th></th></tr>'+
-      '<tr class="'+(td<sY+"-07-31"?"":"fo-cur")+'"><td>31 Jul '+sY+' \u00b7 '+PYL+' POA 2</td><td>'+gbp(round2(K.PY_POA))+'</td></tr>'+
-      '<tr class="'+(td<(sY+1)+"-01-31"?"":"fo-cur")+'"><td>31 Jan '+(sY+1)+' \u00b7 '+PYL+' balancing</td><td>'+gbp(round2(K.PY_BAL))+'</td></tr>'+
-      '<tr class="'+(td<(sY+1)+"-01-31"?"":"fo-cur")+'"><td>31 Jan '+(sY+1)+' \u00b7 '+curTY+' POA 1</td><td>'+gbp(round2(poa))+'</td></tr>'+
-      '<tr class="'+(td<(sY+1)+"-07-31"?"":"fo-cur")+'"><td>31 Jul '+(sY+1)+' \u00b7 '+curTY+' POA 2</td><td>'+gbp(round2(poa))+'</td></tr>'+
-      '<tr class="fo-avg"><td>31 Jan '+(sY+2)+' \u00b7 '+curTY+' balancing (predicted)</td><td>'+gbp(round2(bal))+'</td></tr>'+
-    '</table></div>'+
+    '<h4 style="margin:14px 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;opacity:.65">Payment schedule</h4><div class="fo-sched">'+
+      '<div class="mini-row" style="opacity:'+(td<sY+"-07-31"?'1':'.5')+'"><span>31 Jul '+sY+' \u00b7 '+PYL+' POA 2</span><span>'+gbp(round2(K.PY_POA))+'</span></div>'+
+      '<div class="mini-row" style="opacity:'+(td<(sY+1)+"-01-31"?'1':'.5')+'"><span>31 Jan '+(sY+1)+' \u00b7 '+PYL+' balancing</span><span>'+gbp(round2(K.PY_BAL))+'</span></div>'+
+      '<div class="mini-row" style="opacity:'+(td<(sY+1)+"-01-31"?'1':'.5')+'"><span>31 Jan '+(sY+1)+' \u00b7 '+curTY+' POA 1</span><span>'+gbp(round2(poa))+'</span></div>'+
+      '<div class="mini-row" style="opacity:'+(td<(sY+1)+"-07-31"?'1':'.5')+'"><span>31 Jul '+(sY+1)+' \u00b7 '+curTY+' POA 2</span><span>'+gbp(round2(poa))+'</span></div>'+
+      '<div class="mini-row" style="border-bottom:none;font-weight:600"><span>31 Jan '+(sY+2)+' \u00b7 '+curTY+' balancing (predicted)</span><span>'+gbp(round2(bal))+'</span></div></div>'+
     '<div class="hint" style="margin-top:8px">* = month in progress, counted at its real value. POAs cover income tax and Class 4 NI only, so student loans settle in full with the January balancing payment. '+
       (r.hisSL?'Your loan is set to finish after '+K.HIS_SL_LAST+' and drops out of the estimate from the following year. ':'Your loan finished after '+K.HIS_SL_LAST+'. ')+
       'The '+(sY+2)+' balancing figure moves with your profit; the POAs are fixed by the '+PYL+' return. '+
