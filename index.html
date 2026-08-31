@@ -1636,10 +1636,55 @@ function injectEditorRuntime(doc, code){
     if (typeof (doc.defaultView||{})._enhanceCards === "function") return true;  /* transition: file still has its own */
     var sc=doc.createElement("script");
     sc.setAttribute("data-appinject","1");            /* stripped on export -- never enters the file */
+    /* split/join, NOT replace(): a string .replace() takes the FIRST match, and
+       each token also appears in the file's own header comment, so the comment
+       was being substituted and CLIENT_CODE stayed literally "__CODE__". */
     sc.textContent=src
-      .replace("__CODE__", bareCode(code))
-      .replace("__STREAM__", prefixFor(code)==="OL_" ? "online" : "in-person")
-      .replace("__FNAME__", masterPath(code));
+      .split("__CODE__").join(bareCode(code))
+      .split("__STREAM__").join(prefixFor(code)==="OL_" ? "online" : "in-person")
+      .split("__FNAME__").join(masterPath(code));
+    doc.body.appendChild(sc);
+    return true;
+  }).catch(function(){ return false; });
+}
+
+/* -- Client tab: rendered at view time, never stored (31 Aug 2026) ----------
+   The brief / key-points / last-block-review panel is NOT baked into a master.
+   masters/system/client_panel.js renders it from the training profile and is
+   injected WITH data-appinject, so exportMasterHtml strips it before any push
+   or draft. A rebuilt master can no longer lose it (29 Aug 2026, 23 masters).
+   Cached like the editor runtime so a dropped connection is not a blank tab. */
+function _cpFetch(repo, path, key, asJson){
+  var cached=lsGet(key);
+  return fetch("https://api.github.com/repos/"+PCFG.owner+"/"+repo+"/contents/"+path+"?ref="+PCFG.branch+"&t="+Date.now(),
+               {headers:progHeaders(),cache:"no-store"})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(j){
+      var raw = j.content ? b64ToUtf8(j.content) : null;
+      if(raw===null && j.git_url){ return fetch(j.git_url,{headers:progHeaders()}).then(function(r2){return r2.json();}).then(function(b){ return b64ToUtf8(b.content); }); }
+      return raw;
+    })
+    .then(function(raw){ if(raw===null) throw new Error("empty"); lsSet(key,raw); return asJson?JSON.parse(raw):raw; })
+    .catch(function(){ try{ return cached?(asJson?JSON.parse(cached):cached):null; }catch(e){ return null; } });
+}
+function injectClientPanel(doc, code){
+  return Promise.all([
+    _cpFetch(PCFG.masters,"system/client_panel.js","jbh_clientpanel",false),
+    _cpFetch("jb-health-data","clients/training-profile.json","jbh_profile",true),
+    _cpFetch(PCFG.masters,"system/00_-_client_flags.json","jbh_clientflags",true)
+  ]).then(function(a){
+    var src=a[0], prof=a[1], flags=a[2];
+    if(!src||!prof||!flags) return false;
+    var ini=bareCode(code);
+    var grp=isOnline(code)?"online_client_coding":"in_person_client_coding";
+    var list=((flags[grp]||{}).clients)||[];
+    var hit=null; for(var i=0;i<list.length;i++){ if(list[i].initials===ini){ hit=list[i]; break; } }
+    if(!hit||!hit.code) return false;
+    var entry=null; for(var j=0;j<prof.clients.length;j++){ if(prof.clients[j].code===hit.code){ entry=prof.clients[j]; break; } }
+    if(!entry) return false;
+    var sc=doc.createElement("script");
+    sc.setAttribute("data-appinject","1");
+    sc.textContent=src.split("__ENTRY__").join(JSON.stringify(entry));
     doc.body.appendChild(sc);
     return true;
   }).catch(function(){ return false; });
@@ -1654,6 +1699,8 @@ function loadMasterIntoFrame(mhtml, code){
       var doc=fr.contentDocument;
       injectEditorRuntime(doc, code).then(function(ok){
         if(!ok) setSave("warn","Editor runtime unavailable (offline, no cache). View only \u2014 do not push.");
+        /* after the runtime: the panel's tab button calls showClient() */
+        injectClientPanel(doc, code);
       });
       if(!doc.getElementById("jbAppInjectCSS")){ var st=doc.createElement("style"); st.id="jbAppInjectCSS"; st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.trainer-note-input,.session-note-input,.client-cue-input{overflow:hidden;line-height:1.5;min-height:46px;}.client-cue-wrap{margin-top:10px;}.client-cue-label{font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#2E86C1;margin-bottom:4px;}.client-cue-input{width:100%;box-sizing:border-box;border:1px solid #D4E4F0;border-radius:6px;font-size:12px;padding:6px;font-family:inherit;background:#F4FAFE;}.client-cue-wrap.jb-cue-hidden{display:none;}.jb-cue-btn{margin-top:8px;background:transparent;border:1px dashed #2E86C1;color:#2E86C1;border-radius:14px;padding:4px 11px;font-size:11px;cursor:pointer;}.jb-foot{margin:24px 20px calc(28px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:var(--grey);}.jb-foot a{color:var(--blue);text-decoration:none;font-weight:600;}"; doc.head.appendChild(st); }
       if(doc.body && !doc.querySelector(".jb-foot")){ var ft=doc.createElement("div"); ft.className="jb-foot"; ft.setAttribute("data-appinject","1"); ft.innerHTML='JB Health \u00b7 <a href="https://jbhealth.co.uk" target="_blank" rel="noopener">jbhealth.co.uk</a>'; doc.body.appendChild(ft); }
