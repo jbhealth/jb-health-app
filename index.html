@@ -1837,16 +1837,84 @@ function enhanceEditor(doc){
       return true;
     }catch(err){ return false; }
   }
+  /* Name search. Rewritten 31 Aug 2026 — the old version did a raw substring
+     test in alphabetical order and stopped at the first 8, so "press" could
+     never reach Shoulder/Overhead/Leg press, "row" matched the row in "narrow",
+     a typed hyphen never matched the library's en dash ("squat -" returned
+     nothing), and the synonym map was only consulted when a query found fewer
+     than 8 names, which made all 233 synonyms dead on any common word.
+     Now: normalise both sides, match query words as word-starts in any order,
+     score, THEN cut to 8. */
+  function _normEx(s){
+    return String(s==null?"":s).toLowerCase()
+      .replace(/['\u2019]/g,"")            /* farmer's -> farmers */
+      .replace(/[^a-z0-9]+/g," ")          /* en dash, hyphen, comma, slash, degree -> space */
+      .replace(/\s+/g," ").trim();
+  }
+  /* Lower is better. null = no match. */
+  function _scoreEx(cand,nq,toks){
+    if(cand===nq) return 0;                          /* exact */
+    if(cand.indexOf(nq)===0) return 1;               /* starts with the query */
+    if((" "+cand).indexOf(" "+nq)>-1) return 2;      /* query is a phrase at a word start */
+    var words=cand.split(" "), i, j;
+    for(i=0;i<toks.length;i++){                      /* every word must land somewhere */
+      var found=false;
+      for(j=0;j<words.length;j++){ if(words[j].indexOf(toks[i])===0){ found=true; break; } }
+      if(!found) return null;
+    }
+    var pos=0, ordered=true;                         /* same order scores better */
+    for(i=0;i<toks.length;i++){
+      var at=-1;
+      for(j=pos;j<words.length;j++){ if(words[j].indexOf(toks[i])===0){ at=j; break; } }
+      if(at<0){ ordered=false; break; }
+      pos=at+1;
+    }
+    return ordered?3:4;
+  }
+  /* Normalise the 567 names + 233 synonyms once, not on every keystroke.
+     Each entry: [normalised haystack, canonical name, synonym penalty]. */
+  var _exHay=null;
+  function _exHaystack(){
+    if(_exHay) return _exHay;
+    _exHay=[];
+    var names=_exNames.names, syn=_exNames.syn||{}, i;
+    for(i=0;i<names.length;i++) _exHay.push([_normEx(names[i]),names[i],0]);
+    for(var k in syn) _exHay.push([_normEx(k),syn[k],1]);
+    return _exHay;
+  }
+  /* Synonyms are searched on every query, but cost a full point, so a synonym
+     never outranks a real library name that matched as well. Without that,
+     adding "Press-up" as a synonym for "Push-up" pushed the whole push-up
+     family above Chest press on the bare query "press". */
+  function _rankEx(nq){
+    var toks=nq.split(" "), best={}, hay=_exHaystack(), i, s, nm;
+    for(i=0;i<hay.length;i++){
+      s=_scoreEx(hay[i][0],nq,toks);
+      if(s===null) continue;
+      s+=hay[i][2];
+      nm=hay[i][1];
+      if(!(nm in best) || s<best[nm][0] || (s===best[nm][0] && hay[i][2]<best[nm][1]))
+        best[nm]=[s,hay[i][2]];
+    }
+    return Object.keys(best).sort(function(a,b){
+      return (best[a][0]-best[b][0])                 /* relevance */
+          || (best[a][1]-best[b][1])                 /* direct name before synonym */
+          || (a.length-b.length)                     /* shorter, more canonical name first */
+          || (a<b?-1:a>b?1:0);
+    });
+  }
   function showDD(inp){
     if(!_exNames){ return; }
-    var q=inp.value.trim().toLowerCase();
-    if(q.length<2){ hideDD(); return; }
-    var hits=[], syn=_exNames.syn||{};
-    for(var i=0;i<_exNames.names.length&&hits.length<8;i++){
-      if(_exNames.names[i].toLowerCase().indexOf(q)>-1) hits.push(_exNames.names[i]);
+    var nq=_normEx(inp.value);
+    if(nq.length<2){ hideDD(); return; }
+    var hits=_rankEx(nq).slice(0,8);
+    if(hits.length<8){                               /* plural top-up: "squats" also finds "Squat – TRX" */
+      var sq=nq.split(" ").map(function(t){ return (t.length>2&&t.charAt(t.length-1)==="s")?t.slice(0,-1):t; }).join(" ");
+      if(sq!==nq){
+        var more=_rankEx(sq);
+        for(var m=0;m<more.length&&hits.length<8;m++){ if(hits.indexOf(more[m])<0) hits.push(more[m]); }
+      }
     }
-    if(hits.length<8){ for(var k in syn){ if(hits.length>=8) break;
-      if(k.indexOf(q)>-1 && hits.indexOf(syn[k])===-1) hits.push(syn[k]); } }
     if(!hits.length){ hideDD(); return; }
     dd.innerHTML="";
     hits.forEach(function(nm){
