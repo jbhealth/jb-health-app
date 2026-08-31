@@ -1263,53 +1263,105 @@ function openOverview(){
   showModal(html);
 }
 /* ---- tax estimate ----
-   2026/27 (England). Partnership: split is managed by James to keep both partners inside
-   the basic-rate band, so profit is taxed at 20% + 6% Class 4 NI above the threshold.
-   Wife is PAYE (her allowance is spent on her wage), so ONE personal allowance applies to
-   the partnership profit. Conservative single Class 4 threshold. Pensions not deducted. */
-function openTax(){
-  var PA=12570, IT=0.20, NI4=0.06, NI4T=12570, WIFE_BASE=1900, HR=50270, SL=0.09, SLT=26900, WAGE=25000, HISPOA=4251.62, HERPOA=0, PY_POA2=2333.73, PY_BAL=4922.26, MA=252;
-  function taxYear(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
-  var curMo=today().slice(0,7), curTY=taxYear(curMo);
+   Partnership: the split is managed to keep both partners inside the basic-rate band,
+   so profit is taxed at 20% + 6% Class 4 NI above the threshold. Wife is PAYE (her
+   allowance is spent on her wage), so ONE personal allowance applies to the profit.
+   PROJECTION IS DAY-BASED: profit to date / days elapsed x 365. Every transaction moves
+   the figure immediately - no month-boundary lag.
+   POT TARGET = everything accrued to date minus everything paid to date. Closed tax years
+   count in full, the current year counts at the fraction elapsed. That funds the whole of
+   each year's liability by 5 April, and lands on zero when the balancing payment clears.
+   Fixed figures below come from the filed returns; refresh each April. Pensions not
+   deducted. A planning estimate, not an HMRC figure. */
+var TAX_K = { TY:"2026/27", PA:12570, IT:0.20, HRATE:0.40, NI4:0.06, NI4U:0.02, NI4T:12570,
+  HR:50270, SL:0.09, SLT:26900, WAGE:25000, WIFE_BASE:1900, MA:252,
+  HIS_SL_LAST:"2026/27", HISPOA:4251.62, HERPOA:0, PY_POA:2333.73, PY_BAL:4922.26, MINDAYS:21 };
+function dnum(s){ var p=String(s).split("-"); return Date.UTC(+p[0],+p[1]-1,+p[2]); }
+function daysBetween(a,b){ return Math.round((dnum(b)-dnum(a))/86400000); }
+function taxYearOf(mo){ var y=+mo.slice(0,4), m=+mo.slice(5,7); return m>=4 ? y+"/"+String(y+1).slice(2) : (y-1)+"/"+String(y).slice(2); }
+function potGet(){ var p=(finance.pot||{}); return { you:Number(p.you)||0, her:Number(p.her)||0 }; }
+function taxBill(pred,curTY){ var K=TAX_K;
+  var hisSL=(parseInt(curTY,10)<=parseInt(K.HIS_SL_LAST,10));
+  var jm=Math.max(0,Math.min(pred-K.WIFE_BASE,K.HR)), wf=Math.max(0,pred-jm);
+  var htax=K.IT*Math.max(0,Math.min(jm,K.HR)-K.PA)+K.HRATE*Math.max(0,jm-K.HR);
+  var hni=K.NI4*Math.max(0,Math.min(jm,K.HR)-K.NI4T)+K.NI4U*Math.max(0,jm-K.HR);
+  var hloan=hisSL?K.SL*Math.max(0,jm-K.SLT):0;
+  var hma=Math.min(htax,(jm>K.HR?0:K.MA));
+  var wtax=K.IT*Math.max(0,Math.min(K.WAGE+wf,K.HR)-Math.max(K.WAGE,K.PA))+K.HRATE*Math.max(0,(K.WAGE+wf)-K.HR);
+  var wni=K.NI4*Math.max(0,Math.min(wf,K.HR)-K.NI4T)+K.NI4U*Math.max(0,wf-K.HR);
+  var wloan=K.SL*Math.max(0,(K.WAGE+wf)-K.SLT);
+  var Eh=htax-hma+hni+hloan, Ew=wtax+wni+wloan;
+  return { jm:jm, wf:wf, htax:htax, hni:hni, hloan:hloan, hma:hma, hisSL:hisSL,
+           wtax:wtax, wni:wni, wloan:wloan, Eh:Eh, Ew:Ew, E:Eh+Ew }; }
+function openPot(){ var p=potGet();
+  showModal('<h3>Tax pot</h3><div class="hint">Current balance of each account. Nothing else reads these \u2014 they are only compared against the target.</div>'+
+    '<div class="field"><label>Your account (\u00a3)</label><input type="number" inputmode="decimal" step="any" id="pot_you" value="'+p.you+'"></div>'+
+    '<div class="field"><label>Annabel\u2019s account (\u00a3)</label><input type="number" inputmode="decimal" step="any" id="pot_her" value="'+p.her+'"></div>'+
+    '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal();openTax()">Cancel</button><button class="mb-ok" onclick="savePot()">Save</button></div>'); }
+function savePot(){ finance.pot={ you:round2(parseFloat(document.getElementById("pot_you").value)||0),
+    her:round2(parseFloat(document.getElementById("pot_her").value)||0) };
+  closeModal(); save(); openTax(); }
+function openTax(){ var K=TAX_K;
+  var td=today(), curMo=td.slice(0,7), curTY=taxYearOf(curMo), sY=parseInt(curTY,10);
+  var tyStart=sY+"-04-01", days=daysBetween(tyStart,td)+1, frac=Math.min(1,days/365);
+  var PYL=(sY-1)+"/"+String(sY).slice(2), NYL=(sY+1)+"/"+String(sY+2).slice(2);
   var by={};
-  (finance.txns||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo||taxYear(mo)!==curTY) return; if(!by[mo]) by[mo]={inc:0,exp:0,mil:0}; var a=txnAmount(t); if(t.type==="Income") by[mo].inc+=a; else by[mo].exp+=a; });
-  (mileage.trips||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo||taxYear(mo)!==curTY) return; if(!by[mo]) by[mo]={inc:0,exp:0,mil:0}; by[mo].mil+=tripMiles(t)*mileage.rate; });
-  var months=Object.keys(by).sort(), done=0,sumP=0,toP=0;
-  months.forEach(function(mo){ var x=by[mo],p=x.inc-x.exp-x.mil; toP+=p; if(mo<curMo){ done++; sumP+=p; } });
-  if(!done){ showModal('<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3><div class="hint">Need at least one completed month in this tax year to project. '+(months.length?'Profit so far: '+gbp(round2(toP))+'.':'No '+curTY+' data yet.')+'</div><div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); return; }
-  var avgP=sumP/done, pred=avgP*12;
-  var jm=Math.max(0,Math.min(pred-WIFE_BASE,HR)), wf=Math.max(0,pred-jm);
-  var htax=IT*Math.max(0,Math.min(jm,HR)-PA);
-  var hni=NI4*Math.max(0,Math.min(jm,HR)-NI4T)+0.02*Math.max(0,jm-HR);
-  var hloan=SL*Math.max(0,jm-SLT);
-  var hma=Math.min(htax,MA);
-  var Eh=htax-hma+hni+hloan;
-  var wtax=IT*Math.max(0,Math.min(WAGE+wf,HR)-Math.max(WAGE,PA))+0.40*Math.max(0,(WAGE+wf)-HR);
-  var wni=NI4*Math.max(0,Math.min(wf,HR)-NI4T)+0.02*Math.max(0,wf-HR);
-  var wloan=SL*Math.max(0,(WAGE+wf)-SLT);
-  var Ew=wtax+wni+wloan, E=Eh+Ew, poa1=HISPOA+HERPOA, poaTot=2*poa1, bal=E-poaTot;
-  var sY=parseInt(curTY,10), jan1=PY_BAL+poa1;
-  var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3>'+
-    '<div class="hint">Household view, projected from '+done+' completed month'+(done>1?'s':'')+' \u00d7 12. Profit so far: '+gbp(round2(toP))+'. Her wage assumed \u00a325,000.</div>'+
+  function row(mo){ if(!by[mo]) by[mo]={inc:0,exp:0,mil:0}; return by[mo]; }
+  (finance.txns||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo||taxYearOf(mo)!==curTY) return;
+    var a=txnAmount(t); if(t.type==="Income") row(mo).inc+=a; else row(mo).exp+=a; });
+  (mileage.trips||[]).forEach(function(t){ var mo=(t.date||"").slice(0,7); if(!mo||taxYearOf(mo)!==curTY) return;
+    row(mo).mil+=tripMiles(t)*mileage.rate; });
+  var months=Object.keys(by).sort(), toP=0;
+  months.forEach(function(mo){ var x=by[mo]; toP+=x.inc-x.exp-x.mil; });
+  var stale=(curTY!==K.TY);
+  var staleBox=stale?('<div class="hint" style="color:#B03A2E"><b>Figures out of date.</b> The fixed amounts (payments on account, prior-year balance, wage, marriage allowance) were set for '+K.TY+' and have not been refreshed for '+curTY+'. Treat everything here as unreliable until the new return is filed.</div>'):"";
+  if(days<K.MINDAYS){ showModal('<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3>'+staleBox+
+    '<div class="hint">Only '+days+' day'+(days===1?'':'s')+' into the tax year \u2014 too early to project from. Profit so far: '+gbp(round2(toP))+'.</div>'+
+    '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>'); return; }
+  var pred=toP/days*365, r=taxBill(pred,curTY), poa=K.HISPOA+K.HERPOA, bal=r.E-2*poa;
+  var PY_E=K.PY_BAL+2*K.PY_POA;
+  var pays=[[sY+"-01-31",K.PY_POA],[sY+"-07-31",K.PY_POA],[(sY+1)+"-01-31",K.PY_BAL+poa],[(sY+1)+"-07-31",poa],[(sY+2)+"-01-31",bal]];
+  var paid=0; pays.forEach(function(p){ if(td>=p[0]) paid+=p[1]; });
+  var target=Math.max(0,PY_E+frac*r.E-paid);
+  var pot=potGet(), potTot=pot.you+pot.her, gap=potTot-target;
+  var html='<button class="fo-x" onclick="closeModal()">\u00d7</button><h3>Tax estimate \u00b7 '+curTY+'</h3>'+staleBox+
+    '<div class="fo-proj"><div class="mini-row"><span><b>In the pot by now</b></span><span><b>'+gbp(round2(target))+'</b></span></div>'+
+      '<div class="mini-row"><span>Actual \u00b7 tap to edit</span><span>'+
+        '<span class="ratechip" onclick="closeModal();openPot()">You '+gbp(pot.you)+'</span> '+
+        '<span class="ratechip" onclick="closeModal();openPot()">Annabel '+gbp(pot.her)+'</span></span></div>'+
+      '<div class="mini-row"><span>Total in the pot</span><span>'+gbp(round2(potTot))+'</span></div>'+
+      '<div class="mini-row"><span>'+(gap>=0?'Ahead by':'Behind by')+'</span><span class="'+(gap>=0?'fo-pos':'fo-neg')+'">'+gbp(round2(Math.abs(gap)))+'</span></div></div>'+
+    '<div class="hint">Day-based: '+days+'/365 days ('+Math.round(frac*100)+'%) of '+curTY+' elapsed, profit to date '+gbp(round2(toP))+
+      ', projected full year <b>'+gbp(round2(pred))+'</b>. Target = everything accrued so far, less everything paid. Updates with every transaction.</div>'+
+    '<div class="fo-wrap"><table class="fo-table"><tr><th>'+curTY+'</th><th>In</th><th>Out</th><th>Mileage</th><th>Profit</th></tr>';
+  months.forEach(function(mo){ var x=by[mo], p=x.inc-x.exp-x.mil, cur=(mo===curMo);
+    html+='<tr class="'+(cur?'fo-cur':'')+'"><td>'+monthLabel(mo)+(cur?' *':'')+'</td><td>'+gbp(x.inc)+'</td><td>'+gbp(x.exp)+
+      '</td><td>'+gbp(round2(x.mil))+'</td><td class="'+(p<0?'fo-neg':'fo-pos')+'">'+gbp(round2(p))+'</td></tr>'; });
+  var tI=0,tE=0,tM=0; months.forEach(function(mo){ tI+=by[mo].inc; tE+=by[mo].exp; tM+=by[mo].mil; });
+  html+='<tr class="fo-avg"><td>To date</td><td>'+gbp(round2(tI))+'</td><td>'+gbp(round2(tE))+'</td><td>'+gbp(round2(tM))+
+      '</td><td class="'+(toP<0?'fo-neg':'fo-pos')+'">'+gbp(round2(toP))+'</td></tr></table></div>'+
     '<div class="fo-wrap"><table class="fo-table">'+
       '<tr><th>'+curTY+'</th><th>You</th><th>Her</th></tr>'+
-      '<tr><td>Profit share</td><td>'+gbp(round2(jm))+'</td><td>'+gbp(round2(wf))+'</td></tr>'+
-      '<tr><td>Income tax</td><td>'+gbp(round2(htax))+'</td><td>'+gbp(round2(wtax))+'</td></tr>'+
-      '<tr><td>Class 4 NI</td><td>'+gbp(round2(hni))+'</td><td>'+gbp(round2(wni))+'</td></tr>'+
-      '<tr><td>Student loan</td><td>'+gbp(round2(hloan))+'</td><td>'+gbp(round2(wloan))+'</td></tr>'+
-      '<tr><td>Marriage allowance</td><td>\u2212'+gbp(round2(hma))+'</td><td></td></tr>'+
-      '<tr class="fo-avg"><td>Bill</td><td>'+gbp(round2(Eh))+'</td><td>'+gbp(round2(Ew))+'</td></tr>'+
+      '<tr><td>Profit share</td><td>'+gbp(round2(r.jm))+'</td><td>'+gbp(round2(r.wf))+'</td></tr>'+
+      '<tr><td>Income tax</td><td>'+gbp(round2(r.htax))+'</td><td>'+gbp(round2(r.wtax))+'</td></tr>'+
+      '<tr><td>Class 4 NI</td><td>'+gbp(round2(r.hni))+'</td><td>'+gbp(round2(r.wni))+'</td></tr>'+
+      '<tr><td>Student loan</td><td>'+(r.hisSL?gbp(round2(r.hloan)):"\u2014")+'</td><td>'+gbp(round2(r.wloan))+'</td></tr>'+
+      '<tr><td>Marriage allowance</td><td>\u2212'+gbp(round2(r.hma))+'</td><td></td></tr>'+
+      '<tr class="fo-avg"><td>Bill</td><td>'+gbp(round2(r.Eh))+'</td><td>'+gbp(round2(r.Ew))+'</td></tr>'+
     '</table></div>'+
-    '<div class="fo-proj"><div class="mini-row"><span>Combined estimated bill ('+curTY+')</span><span>'+gbp(round2(E))+'</span></div>'+
-      '<div class="mini-row"><span>Set aside per month</span><span>'+gbp(round2(E/12))+'</span></div></div>'+
-    '<div class="fo-wrap"><table class="fo-table">'+
-      '<tr><th>Payment schedule</th><th></th></tr>'+
-      '<tr><td>31 Jul '+sY+' \u00b7 last year 2nd POA (paid)</td><td>'+gbp(round2(PY_POA2))+'</td></tr>'+
-      '<tr><td>31 Jan '+(sY+1)+' \u00b7 last year balance + 1st POA</td><td>'+gbp(round2(jan1))+'</td></tr>'+
-      '<tr><td>31 Jul '+(sY+1)+' \u00b7 2nd POA</td><td>'+gbp(round2(poa1))+'</td></tr>'+
-      '<tr class="fo-avg"><td>31 Jan '+(sY+2)+' \u00b7 this year balance (predicted)</td><td>'+gbp(round2(bal))+'</td></tr>'+
+    '<div class="fo-proj"><div class="mini-row"><span>Combined estimated bill ('+curTY+')</span><span>'+gbp(round2(r.E))+'</span></div></div>'+
+    '<div class="fo-wrap"><table class="fo-table"><tr><th>Payment schedule</th><th></th></tr>'+
+      '<tr class="'+(td<sY+"-07-31"?"":"fo-cur")+'"><td>31 Jul '+sY+' \u00b7 '+PYL+' POA 2</td><td>'+gbp(round2(K.PY_POA))+'</td></tr>'+
+      '<tr class="'+(td<(sY+1)+"-01-31"?"":"fo-cur")+'"><td>31 Jan '+(sY+1)+' \u00b7 '+PYL+' balancing</td><td>'+gbp(round2(K.PY_BAL))+'</td></tr>'+
+      '<tr class="'+(td<(sY+1)+"-01-31"?"":"fo-cur")+'"><td>31 Jan '+(sY+1)+' \u00b7 '+curTY+' POA 1</td><td>'+gbp(round2(poa))+'</td></tr>'+
+      '<tr class="'+(td<(sY+1)+"-07-31"?"":"fo-cur")+'"><td>31 Jul '+(sY+1)+' \u00b7 '+curTY+' POA 2</td><td>'+gbp(round2(poa))+'</td></tr>'+
+      '<tr class="fo-avg"><td>31 Jan '+(sY+2)+' \u00b7 '+curTY+' balancing (predicted)</td><td>'+gbp(round2(bal))+'</td></tr>'+
     '</table></div>'+
-    '<div class="hint" style="margin-top:8px">The first two dates are your filed last-year figures; the final line is this year\u2019s balance from the estimate above, due the following January. POAs cover income tax and Class 4 NI only, so student loans (yours '+gbp(round2(hloan))+', hers '+gbp(round2(wloan))+') are always settled in full with the January balance. Your \u00a3252 marriage allowance is applied to your side. Assumes 2026/27 Plan 1 rates, her \u00a325,000 wage and your current split; pensions are not deducted. A planning estimate, not an HMRC figure.</div>'+
+    '<div class="hint" style="margin-top:8px">* = month in progress, counted at its real value. POAs cover income tax and Class 4 NI only, so student loans settle in full with the January balancing payment. '+
+      (r.hisSL?'Your loan is set to finish after '+K.HIS_SL_LAST+' and drops out of the estimate from the following year. ':'Your loan finished after '+K.HIS_SL_LAST+'. ')+
+      'The '+(sY+2)+' balancing figure moves with your profit; the POAs are fixed by the '+PYL+' return. '+
+      NYL+'\u2019s POA is not in the target \u2014 it is a prepayment of that year, funded from that year. '+
+      'A planning estimate, not an HMRC figure.</div>'+
     '<div class="modal-btns"><button class="mb-cancel" onclick="closeModal()">Close</button></div>';
   showModal(html);
 }
