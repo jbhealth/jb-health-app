@@ -558,7 +558,7 @@ async function pushPill(code){
   if(!ghConfigured()||sweepBusy) return;
   var path="balances/"+pillFile(code);
   var url="https://api.github.com/repos/"+cfg.owner+"/programs/contents/"+path;
-  var body={ message:"Balance pill "+pillFile(code), content:utf8ToB64(JSON.stringify({b:balance(code)})), branch:"main" };
+  var body={ message:"Balance pill "+pillFile(code), content:utf8ToB64(pillJSON(balance(code),lastMoved(code))), branch:"main" };
   try{
     var head=await fetch(url+"?ref=main",{headers:ghHeaders()});
     if(head.ok){ var j=await head.json(); if(j&&j.sha) body.sha=j.sha; }
@@ -595,23 +595,23 @@ async function sweepDependents(){
 
 async function sweepPillMap(){
   /* Current pill values keyed by session code, from programs/balances/. */
-  var map={}, shas={};
+  var map={}, shas={}, raws={};
   try{
     var dirUrl="https://api.github.com/repos/"+cfg.owner+"/programs/contents/balances?ref=main";
     var res=await fetch(dirUrl,{headers:ghHeaders()});
-    if(!res.ok) return {map:map,shas:shas};
+    if(!res.ok) return {map:map,shas:shas,raws:raws};
     var files=await res.json();
     var jobs=files.filter(function(f){return /^JB_.+\.json$/.test(f.name);}).map(async function(f){
       var code=f.name.replace(/^JB_/,"").replace(/\.json$/,"");
       shas[code]=f.sha;
       try{
         var r=await fetch("https://api.github.com/repos/"+cfg.owner+"/programs/contents/balances/"+encodeURIComponent(f.name)+"?ref=main",{headers:ghHeaders()});
-        if(r.ok){ var jj=await r.json(); var v=JSON.parse(b64ToUtf8(jj.content)); map[code]=(v&&typeof v.b==="number")?v.b:null; }
+        if(r.ok){ var jj=await r.json(); var raw=b64ToUtf8(jj.content).trim(); var v=JSON.parse(raw); map[code]=(v&&typeof v.b==="number")?v.b:null; raws[code]=raw; }
       }catch(e){}
     });
     await Promise.all(jobs);
   }catch(e){}
-  return {map:map,shas:shas};
+  return {map:map,shas:shas,raws:raws};
 }
 
 async function openBalanceSweep(){
@@ -630,9 +630,9 @@ async function openBalanceSweep(){
     var path="balances/JB_"+code+".json";
     var exists=(code in cur.map)||(code in cur.shas);
     if(dep.set[code]){ if(exists) plan.push({code:code,act:"delete",path:path,sha:cur.shas[code]}); return; }
-    var nb=balance(code), ob=cur.map[code];
-    if(!exists) plan.push({code:code,act:"create",val:nb,path:path});
-    else if(ob!==nb) plan.push({code:code,act:"update",val:nb,old:ob,path:path});
+    var nb=balance(code), ob=cur.map[code], nd=lastMoved(code);
+    if(!exists) plan.push({code:code,act:"create",val:nb,d:nd,path:path});
+    else if((cur.raws[code]||"")!==pillJSON(nb,nd)) plan.push({code:code,act:"update",val:nb,d:nd,old:ob,path:path});
     else plan.push({code:code,act:"same",val:nb});
   });
   var changes=plan.filter(function(p){return p.act!=="same";});
@@ -669,7 +669,7 @@ async function runBalanceSweep(){
   var msg="Balance sweep: "+parts.join(", ");
   var tree=changes.map(function(p){
     if(p.act==="delete") return {path:p.path,mode:"100644",type:"blob",sha:null};
-    return {path:p.path,mode:"100644",type:"blob",content:JSON.stringify({b:p.val})};
+    return {path:p.path,mode:"100644",type:"blob",content:pillJSON(p.val,p.d)};
   });
   /* One commit via the Git Data API. The final ref update 422s if the branch tip
      moved since we read it (another writer landed). Re-read head and rebuild on a
@@ -871,6 +871,12 @@ function disconnectSync(){ if(!confirm("Remove the token and repo settings from 
 /* ---- sessions ---- */
 function seedDefaults(){ for(var code in data){ if(!data[code].entries) data[code].entries=[]; if(!data[code].name) data[code].name=CLIENT_NAMES[code]||code; } seeded=true; }
 function balance(code){ var ents=(data[code]&&data[code].entries)||[],s=0; for(var i=0;i<ents.length;i++){ s+=ents[i].type==="out"?-ents[i].sessions:ents[i].sessions; } return round2(s); }
+/* Date of the latest entry that moved the balance, for the pill's "Updated" stamp.
+   Entries are date-only, so this is a day and never a time. */
+function lastMoved(code){ var ents=(data[code]&&data[code].entries)||[],d=""; for(var i=0;i<ents.length;i++){ var v=String(ents[i].date||""); if(/^\d{4}-\d{2}-\d{2}$/.test(v)&&v>d) d=v; } return d||null; }
+/* Must stay byte-identical to build_balances.py bjson(): key order b then d, d
+   omitted when unknown. If these two diverge, each sweep undoes the other. */
+function pillJSON(val,d){ var o={b:val}; if(d) o.d=d; return JSON.stringify(o); }
 function render(){
   if(!seeded) seedDefaults();
   var owe=0,owingCount=0,credit=0;
