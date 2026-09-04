@@ -3153,7 +3153,7 @@ function loadStagedDay(offset){
   fetch(WORKER+"/day?date="+date,{headers:{"x-jb-admin":at}})
   .then(function(r){ return r.json(); })
   .then(function(j){
-    if(!j.ok){ out.innerHTML='<div class="empty-hist">Nothing staged for '+date+'. Run Close out day first.</div>'; _staged=null; return; }
+    if(!j.ok){ offerEmptyDay(date, offset, false); return; }
     _staged=j.day; renderStagedDay();
   })
   .catch(function(e){ out.innerHTML='<div class="empty-hist">Fetch failed ('+e.message+').</div>'; });
@@ -3163,7 +3163,7 @@ function renderStagedDay(){
   var out=document.getElementById("todayResult"), map=rosterMap();
   var codes=Object.keys(data).sort();
   var pts=_staged.events.filter(function(ev){ return /^\[PT\]/i.test(ev.title); });
-  if(!pts.length){ out.innerHTML='<div class="empty-hist">No [PT] events staged for '+_staged.date+'.</div>'; return; }
+  if(!pts.length){ offerEmptyDay(_staged.date, _stagedOffset, true); return; }
   var html='<div class="hist-label">'+_staged.date+' \u2014 pick a code for anything unresolved</div>';
   pts.forEach(function(ev,i){
     var nm=stagedName(ev.title), knownRaw=map[nm.toLowerCase()]||"", parts=knownRaw.split(","),
@@ -3221,6 +3221,56 @@ function pushTodayJson(){
        and only the Push tap on the result table remains manual. */
     if(_stagedOffset===1) prePublishTomorrow(); })
   .catch(function(e){ out.innerHTML='<div class="empty-hist">Push failed ('+e.message+').</div>'; });
+}
+
+/* ── No-appointments day (4 Sep 2026) ──
+   An empty tomorrow is never staged: worker.js only banks a day: bundle for a
+   date carrying a tagged event, so GET /day 404s on a genuinely free day and
+   the old "Nothing staged" message was a dead end with no button — today.json
+   sat on the previous day's order and the dashboard stayed wrong. Confirm the
+   day is empty, then clear. CLEARED MEANS {date, order:[]}, NEVER a delete:
+   republish.py --tomorrow refuses outright (exit 1) on a missing file but
+   exits clean on an empty order, and loadToday() needs order.length so the
+   dashboard falls back to the plain roster. No eve publish on this path. */
+function offerEmptyDay(date, offset, staged){
+  var out=document.getElementById("todayResult"), at=adminTok();
+  _staged=null;
+  function render(ran){
+    var msg = staged ? "Staged for "+date+", but no [PT] sessions on it."
+            : ran    ? "Close out day ran. Nothing booked for "+date+"."
+                     : "Nothing staged for "+date+" \u2014 Close out day may not have run yet.";
+    out.innerHTML='<div class="hist-label">'+date+'</div>'
+      +'<div class="empty-hist" style="text-align:left">'+msg+'</div>'
+      +'<div class="actions" style="margin-top:12px">'
+      +'<button class="act session" onclick="clearTodayJson(\''+date+'\')">No appointments \u2014 clear today.json</button>'
+      +'<button class="act edit" onclick="loadStagedDay('+offset+')">Re-check</button></div>';
+  }
+  if(staged||!at){ render(false); return; }
+  fetch(WORKER+"/day?date="+stagedDateFor(0),{headers:{"x-jb-admin":at}})
+  .then(function(r){ return r.json(); })
+  .then(function(j){ render(!!j.ok); })
+  .catch(function(){ render(false); });
+}
+function clearTodayJson(date){
+  var out=document.getElementById("todayResult");
+  if(!progToken()){ alert("Set your GitHub token first (Programs tab)."); return; }
+  if(!confirm("Confirm there are no appointments on "+date+".\n\nThis clears today.json: the dashboard shows the plain roster and nothing is pre-published.")) return;
+  out.innerHTML='<div class="empty-hist">Clearing\u2026</div>';
+  var api="https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.programs+"/contents/today.json";
+  var payload={date:date, order:[]};
+  fetch(api,{headers:progHeaders()})
+  .then(function(r){ return r.ok?r.json():null; })
+  .then(function(cur){
+    var b={message:"today.json cleared for "+date+" (no appointments)",
+           content:btoa(unescape(encodeURIComponent(JSON.stringify(payload,null,1))))};
+    if(cur&&cur.sha) b.sha=cur.sha;
+    return fetch(api,{method:"PUT",headers:progHeaders(),body:JSON.stringify(b)});
+  })
+  .then(function(r){ if(!r.ok) throw new Error("push "+r.status); return r.json(); })
+  .then(function(){
+    out.innerHTML='<div class="empty-hist" style="color:var(--green)">Cleared \u2713 \u2014 '+date+' has no appointments. No eve publish.</div>';
+  })
+  .catch(function(e){ out.innerHTML='<div class="empty-hist">Clear failed ('+e.message+').</div>'; });
 }
 
 /* VAT watch — ONE COPY (24 Aug 2026): the maths lives solely in
