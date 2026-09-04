@@ -873,10 +873,18 @@ function seedDefaults(){ for(var code in data){ if(!data[code].entries) data[cod
 function balance(code){ var ents=(data[code]&&data[code].entries)||[],s=0; for(var i=0;i<ents.length;i++){ s+=ents[i].type==="out"?-ents[i].sessions:ents[i].sessions; } return round2(s); }
 /* Date of the latest entry that moved the balance, for the pill's "Updated" stamp.
    Entries are date-only, so this is a day and never a time. */
-function lastMoved(code){ var ents=(data[code]&&data[code].entries)||[],d=""; for(var i=0;i<ents.length;i++){ var v=String(ents[i].date||""); if(/^\d{4}-\d{2}-\d{2}$/.test(v)&&v>d) d=v; } return d||null; }
-/* Must stay byte-identical to build_balances.py bjson(): key order b then d, d
-   omitted when unknown. If these two diverge, each sweep undoes the other. */
-function pillJSON(val,d){ var o={b:val}; if(d) o.d=d; return JSON.stringify(o); }
+function lastMoved(code){ var ents=(data[code]&&data[code].entries)||[],d=""; for(var i=0;i<ents.length;i++){ var v=String(ents[i].date||""); if(/^\d{4}-\d{2}-\d{2}$/.test(v)&&v>d) d=v; } return d||PILL_NO_DATE; }
+/* JS twin of balance_pill.pill_json. Must stay byte-identical: key order b then
+   d, d omitted only for the explicit no-movement sentinel. If these two diverge,
+   each sweep undoes the other — balance_audit.py exists to catch that.
+   d is REQUIRED. Passing undefined is the bug this throws on: a writer that
+   updates the balance and leaves the old date in place states a wrong date with
+   full confidence. A code with genuinely no dated movement passes PILL_NO_DATE. */
+var PILL_NO_DATE="__no_dated_movement__";
+function pillJSON(val,d){
+  if(d===undefined) throw new Error("pillJSON: a balance pill must be written with a date recomputed from the ledger (lastMoved), or PILL_NO_DATE if there is genuinely no dated movement.");
+  var o={b:val}; if(d&&d!==PILL_NO_DATE) o.d=d; return JSON.stringify(o);
+}
 function render(){
   if(!seeded) seedDefaults();
   var owe=0,owingCount=0,credit=0;
