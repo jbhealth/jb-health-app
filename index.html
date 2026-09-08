@@ -522,6 +522,7 @@ function switchTab(name){ activeTab=name;
   var ht=document.getElementById("headerTools"); if(ht) ht.style.display = (name==="programs")?"none":"";
   renderAll();
   if(name==="pending") loadPending();
+  window.scrollTo(0,0);
 }
 function renderAll(){ render(); renderMileage(); renderFinance(); renderPrograms(); }
 
@@ -1549,7 +1550,7 @@ function masterPath(code){ return prefixFor(code)+bareCode(code)+"_Programs_Mast
 function masterApi(code){ return "https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/"+masterPath(code); }
 function clientUrl(code){ return "https://jbhealth.github.io/programs/"+prefixFor(code)+bareCode(code)+"_Programs_Client.html"; }
 function openClientView(code){ var f=document.getElementById("cvFrame"); f.src=clientUrl(code); document.getElementById("clientView").classList.add("show"); }
-function closeClientView(){ document.getElementById("clientView").classList.remove("show"); document.getElementById("cvFrame").src="about:blank"; }
+function closeClientView(){ document.getElementById("clientView").classList.remove("show"); document.getElementById("cvFrame").src="about:blank"; window.scrollTo(0,0); }
 
 function liveSig(htmlStr){
   var d=document.createElement("div"); d.innerHTML=htmlStr; var sig=[];
@@ -2262,6 +2263,7 @@ function closeMaster(){
   document.getElementById("progEditor").classList.remove("show");
   var fr=document.getElementById("progFrame"); fr.src="about:blank";
   if(window._progBlob){ URL.revokeObjectURL(window._progBlob); window._progBlob=null; }
+  window.scrollTo(0,0);
 }
 
 /* ---- startup ---- */
