@@ -631,6 +631,8 @@ async function openBalanceSweep(){
     var path="balances/JB_"+code+".json";
     var exists=(code in cur.map)||(code in cur.shas);
     if(dep.set[code]){ if(exists) plan.push({code:code,act:"delete",path:path,sha:cur.shas[code]}); return; }
+    /* No session entries yet -> no pill (same rule as build_balances.py, 14 Sep 2026). A missing file renders nothing on the page; a {"b":0} stub fails balance_audit. */
+    if(!((data[code]&&data[code].entries)||[]).length){ if(exists) plan.push({code:code,act:"delete",path:path,sha:cur.shas[code]}); return; }
     var nb=balance(code), ob=cur.map[code], nd=lastMoved(code);
     if(!exists) plan.push({code:code,act:"create",val:nb,d:nd,path:path});
     else if((cur.raws[code]||"")!==pillJSON(nb,nd)) plan.push({code:code,act:"update",val:nb,d:nd,old:ob,path:path});
