@@ -2606,7 +2606,15 @@ async function onReject(i){
 
 
 /* ---- home-screen badge for pending items (App Badging API) ---- */
-function osBadge(n){ try{ if("setAppBadge" in navigator){ if(n>0){ navigator.setAppBadge(); } else if("clearAppBadge" in navigator){ navigator.clearAppBadge(); } } }catch(e){} }
+function osBadge(n){
+  try{ if("setAppBadge" in navigator){ if(n>0){ navigator.setAppBadge(); } else if("clearAppBadge" in navigator){ navigator.clearAppBadge(); } } }catch(e){}
+  /* route through the service worker too: iOS repaints SW badge calls at once,
+     and at zero the SW closes any JB Health notifications still sitting in Notification Centre */
+  try{ if("serviceWorker" in navigator){ navigator.serviceWorker.ready.then(function(reg){
+    if(reg.active) reg.active.postMessage({type:"jbh-badge", n:n});
+    if(n===0 && reg.getNotifications){ reg.getNotifications().then(function(l){ l.forEach(function(x){ x.close(); }); }).catch(function(){}); }
+  }).catch(function(){}); } }catch(e){}
+}
 function requestNotifPerm(){ try{ if("Notification" in window && Notification.permission==="default"){ Notification.requestPermission(); } }catch(e){} }
 /* ── Push notifications (build step 7½) ──
    Registration is lazy and harmless: the SW is network-first for the page, so
@@ -2664,8 +2672,8 @@ async function refreshBadge(){ if(!adminTok()){ osBadge(0); return; } try{ var i
 /* badge on open, then keep it fresh while the app is open (background updates need Web Push) */
 setTimeout(function(){ requestNotifPerm(); refreshBadge(); }, 1500);
 /* no polling: background updates arrive by Web Push; badge refreshes on open/foreground only */
-document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); foregroundRefresh(); } else { osBadge(_pending.length); } });
-window.addEventListener("pagehide", function(){ osBadge(_pending.length); });
+document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); foregroundRefresh(); } else { osBadge(_pending.length+_intakes.length); } });
+window.addEventListener("pagehide", function(){ osBadge(_pending.length+_intakes.length); });
 
 /* ── Actions tab ── */
 function toggleActBody(bodyId,resId){
