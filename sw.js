@@ -31,14 +31,36 @@ self.addEventListener("fetch", (e) => {
 });
 
 self.addEventListener("push", (e) => {
-  e.waitUntil(
-    self.registration.showNotification("JB Health", {
-      body: "New submission waiting — a client log or intake form.",
+  e.waitUntil((async () => {
+    /* dot on the icon even while the app is closed */
+    try { if (self.navigator && "setAppBadge" in self.navigator) await self.navigator.setAppBadge(); } catch (err) {}
+    await self.registration.showNotification("JB Health", {
+      body: "New submission waiting: a client log or intake form.",
       tag: "jbh-pending",
       badge: "icon-192.png",
       icon: "icon-192.png",
-    })
-  );
+    });
+  })());
+});
+
+/* The page tells the SW the live pending total. Badge calls made from the SW
+   repaint on iOS straight away; ones made from a foreground page often don't
+   until the app is killed. At zero, delivered notifications are closed too. */
+self.addEventListener("message", (e) => {
+  const d = e.data || {};
+  if (d.type !== "jbh-badge") return;
+  e.waitUntil((async () => {
+    const n = Number(d.n) || 0;
+    try {
+      if (self.navigator && "setAppBadge" in self.navigator) {
+        if (n > 0) await self.navigator.setAppBadge();
+        else if ("clearAppBadge" in self.navigator) await self.navigator.clearAppBadge();
+      }
+    } catch (err) {}
+    if (n === 0) {
+      try { (await self.registration.getNotifications()).forEach((x) => x.close()); } catch (err) {}
+    }
+  })());
 });
 
 self.addEventListener("notificationclick", (e) => {
