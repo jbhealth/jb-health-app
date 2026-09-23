@@ -2607,7 +2607,7 @@ async function onReject(i){
 
 /* ---- home-screen badge for pending items (App Badging API) ---- */
 function osBadge(n){
-  try{ if("setAppBadge" in navigator){ if(n>0){ navigator.setAppBadge(); } else if("clearAppBadge" in navigator){ navigator.clearAppBadge(); } } }catch(e){}
+  try{ if("setAppBadge" in navigator){ if(n>0){ navigator.setAppBadge(n); } else if("clearAppBadge" in navigator){ navigator.clearAppBadge(); } } }catch(e){}
   /* route through the service worker too: iOS repaints SW badge calls at once,
      and at zero the SW closes any JB Health notifications still sitting in Notification Centre */
   try{ if("serviceWorker" in navigator){ navigator.serviceWorker.ready.then(function(reg){
