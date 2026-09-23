@@ -2290,9 +2290,14 @@ var _pending=[];
 function adminTok(){ return lsGet("jbh_admin")||""; }
 function setAdminTok(){ var t=prompt("Paste the endpoint admin token:", adminTok()); if(t!=null){ lsSet("jbh_admin", t.trim()); requestNotifPerm(); loadPending(); } }
 function fmtDate(iso){ var m=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p=String(iso).split("-"); return parseInt(p[2],10)+" "+m[parseInt(p[1],10)-1]+" "+p[0]; }
-function updatePendingBadge(n){ var b=document.getElementById("pbadge"); if(!b) return; if(n>0){ b.textContent="\u2022"; b.classList.add("show"); 
-  var b2=document.getElementById("pbadge-bn"); if(b2){ if(n>0){ b2.textContent=n; b2.classList.add("show"); } else { b2.classList.remove("show"); } }
-} else { b.classList.remove("show"); } }
+function updatePendingBadge(n){
+  /* both badges handled independently, both directions: the bottom-bar count used to
+     be set only when n>0, so it stuck at its last value until the app was killed */
+  var b=document.getElementById("pbadge");
+  if(b){ if(n>0){ b.textContent="\u2022"; b.classList.add("show"); } else { b.classList.remove("show"); } }
+  var b2=document.getElementById("pbadge-bn");
+  if(b2){ if(n>0){ b2.textContent=n; b2.classList.add("show"); } else { b2.textContent=""; b2.classList.remove("show"); } }
+}
 function weightsUrl(code){ return "https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/weights/"+encodeURIComponent("weights-"+code+".json"); }
 async function ghGetWeights(code){
   var res=await fetch(weightsUrl(code)+"?ref="+encodeURIComponent(cfg.branch), {headers:ghHeaders()});
