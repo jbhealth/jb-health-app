@@ -30,44 +30,53 @@ self.addEventListener("fetch", (e) => {
   /* everything else: straight through, untouched */
 });
 
+/* Badge count survives the SW being torn down between pushes. iOS wants a NUMBER:
+   setAppBadge() with no argument asks for a flag/dot, which iOS does not render. */
+const BADGE_CACHE = "jbh-badge";
+const BADGE_KEY = "/__jbh_badge_count";
+async function badgeGet() {
+  try { const c = await caches.open(BADGE_CACHE); const r = await c.match(BADGE_KEY);
+        return r ? (Number(await r.text()) || 0) : 0; } catch (e) { return 0; }
+}
+async function badgeStore(n) {
+  try { const c = await caches.open(BADGE_CACHE); await c.put(BADGE_KEY, new Response(String(n))); } catch (e) {}
+}
+async function badgePaint(n) {
+  try {
+    if (self.navigator && "setAppBadge" in self.navigator) {
+      if (n > 0) await self.navigator.setAppBadge(n);
+      else if ("clearAppBadge" in self.navigator) await self.navigator.clearAppBadge();
+    }
+  } catch (e) {}
+}
+
 self.addEventListener("push", (e) => {
   e.waitUntil((async () => {
-    /* dot on the icon even while the app is closed */
-    try { if (self.navigator && "setAppBadge" in self.navigator) await self.navigator.setAppBadge(); } catch (err) {}
+    /* banner FIRST: iOS requires one per push, and nothing above it may block it */
     await self.registration.showNotification("JB Health", {
       body: "New submission waiting: a client log or intake form.",
       tag: "jbh-pending",
       badge: "icon-192.png",
       icon: "icon-192.png",
     });
+    const n = (await badgeGet()) + 1;
+    await badgeStore(n);
+    await badgePaint(n);
   })());
 });
 
-/* The page tells the SW the live pending total. Badge calls made from the SW
-   repaint on iOS straight away; ones made from a foreground page often don't
-   until the app is killed. At zero, delivered notifications are closed too. */
+/* The page tells the SW the live pending total whenever it changes, which keeps
+   the SW's own tally honest. At zero, delivered notifications are closed too:
+   a badge iOS set itself on delivery will not clear any other way. */
 self.addEventListener("message", (e) => {
   const d = e.data || {};
   if (d.type !== "jbh-badge") return;
   e.waitUntil((async () => {
-    const n = Number(d.n) || 0;
-    try {
-      if (self.navigator && "setAppBadge" in self.navigator) {
-        if (n > 0) await self.navigator.setAppBadge();
-        else if ("clearAppBadge" in self.navigator) await self.navigator.clearAppBadge();
-      }
-    } catch (err) {}
+    const n = Math.max(0, Number(d.n) || 0);
+    await badgeStore(n);
+    await badgePaint(n);
     if (n === 0) {
       try { (await self.registration.getNotifications()).forEach((x) => x.close()); } catch (err) {}
     }
-  })());
-});
-
-self.addEventListener("notificationclick", (e) => {
-  e.notification.close();
-  e.waitUntil((async () => {
-    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const w of wins) { if ("focus" in w) return w.focus(); }
-    return self.clients.openWindow("./");
   })());
 });
