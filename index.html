@@ -1536,9 +1536,28 @@ function showModal(html){ document.getElementById("modalBox").innerHTML=html;
   }
   document.getElementById("modal").classList.add("show"); }
 function closeModal(){ document.getElementById("modal").classList.remove("show");
+  try{ var _ae=document.activeElement; if(_ae&&_ae!==document.body&&_ae.blur) _ae.blur(); }catch(e){}
   document.body.classList.remove("modal-open"); document.body.style.top="";
   window.scrollTo(0,_modalScrollY); }
 document.getElementById("modal").addEventListener("click",function(e){ if(e.target.id==="modal") closeModal(); });
+/* iOS home-screen app: when the keyboard closes, WebKit can leave the layout
+   viewport offset, so the fixed bottom nav paints mid-page (and the header
+   slides under the status bar) until a restart. Once the viewport settles,
+   nudge the scroll position so WebKit re-anchors fixed elements. */
+(function(){
+  var vv=window.visualViewport, t=null;
+  function settle(){ clearTimeout(t); t=setTimeout(function(){
+    var a=document.activeElement;
+    if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+    if(document.body.classList.contains("modal-open")) return;
+    var x=window.scrollX||0, y=window.scrollY||0;
+    window.scrollTo(x,y+1); window.scrollTo(x,y);
+  },150); }
+  if(vv) vv.addEventListener("resize",settle);
+  window.addEventListener("focusout",settle);
+  window.addEventListener("pageshow",settle);
+  document.addEventListener("visibilitychange",function(){ if(!document.hidden) settle(); });
+})();
 
 
 /* ---- programs (master pull/edit/push) ---- */
