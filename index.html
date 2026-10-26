@@ -306,7 +306,10 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
     </div><div class="client-body" id="repubBody" style="display:none;padding-top:12px"><div id="repubResult"></div></div></div>
     <div class="client" id="invCard"><div class="client-row" onclick="toggleActBody('invBody','invResult')">
       <div style="min-width:0"><div class="client-name">Build invoice</div><div class="client-sub">Counts the month's classes from the calendar and builds the Combe Grove invoice + email to Jules. Month-end job.</div></div>
-      <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();invStart()">Run</button>
+      <div style="display:flex;gap:6px;flex:none;flex-wrap:wrap">
+        <button class="act edit" style="flex:none;min-width:0;padding:10px 12px" onclick="event.stopPropagation();window.location.href='shortcuts://run-shortcut?name='+encodeURIComponent('JB Month Read')">Month Read</button>
+        <button class="act session" style="flex:none;min-width:0;padding:10px 18px" onclick="event.stopPropagation();invStart()">Run</button>
+      </div>
     </div><div class="client-body" id="invBody" style="display:none;padding-top:12px"><div id="invResult"></div></div></div>
     <div class="client" id="vatCard"><div class="client-row" onclick="toggleVat()">
       <div style="min-width:0"><div class="client-name">VAT check</div><div class="client-sub">Where your rolling 12-month turnover sits against the &pound;90k line. Glance monthly.</div></div>
