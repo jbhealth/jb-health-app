@@ -330,6 +330,8 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 .pl-btns{display:flex;gap:8px;margin-top:10px;}
 .pl-btns button{flex:1;border:none;border-radius:8px;padding:9px;font-weight:600;cursor:pointer;}
 .pl-w{display:none;width:70px;padding:3px 6px;border:1px solid var(--blue,#2E86C1);border-radius:6px;font-size:13px;text-align:right;}
+.pl-u{display:none;}
+.pl-card.editing .pl-u{display:inline;}
 .pl-card.editing .pl-wv{display:none;}
 .pl-card.editing .pl-w{display:inline-block;}
 .pl-edit{background:#fff;color:var(--navy,#1B3F6B);border:1px solid var(--border,#D4E4F0) !important;}
@@ -2609,7 +2611,7 @@ async function loadPending(){
       var hasW=(typeof r.weight==="number" && isFinite(r.weight) && r.weight>0);
       var shown=hasW?(esc(r.weight)+'kg'):'<span style="opacity:.55;font-weight:500">as prescribed</span>';
       var val=hasW?esc(r.weight):'';
-      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span><b class="pl-wv">'+shown+'</b><input class="pl-w" type="number" step="0.5" min="0" max="300" placeholder="\u2014" value="'+val+'">kg</span><i>'+esc(r.program||"")+d+'</i></div>';
+      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span><b class="pl-wv">'+shown+'</b><input class="pl-w" type="number" step="0.5" min="0" max="300" placeholder="\u2014" value="'+val+'"><span class="pl-u">kg</span></span><i>'+esc(r.program||"")+d+'</i></div>';
     }).join("");
     return '<div class="pl-card" id="plc-'+i+'"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
       '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
