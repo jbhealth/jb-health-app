@@ -327,6 +327,11 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
 .pl-rec{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px solid rgba(0,0,0,0.05);}
 .pl-rec b{color:var(--navy,#1B3F6B);}
 .pl-rec i{opacity:.6;font-style:normal;font-size:11px;}
+.pl-mid{display:inline-flex;align-items:baseline;gap:14px;}
+.pl-mid .pl-sr{font-weight:700;}
+.pl-rec{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:4px 14px;align-items:baseline;}
+.pl-rec i{text-align:right;}
+@media (max-width:560px){.pl-rec{grid-template-columns:minmax(0,1fr) auto;}.pl-rec i{grid-column:1/-1;}}
 .pl-btns{display:flex;gap:8px;margin-top:10px;}
 .pl-btns button{flex:1;border:none;border-radius:8px;padding:9px;font-weight:600;cursor:pointer;}
 .pl-w{display:none;width:70px;padding:3px 6px;border:1px solid var(--blue,#2E86C1);border-radius:6px;font-size:13px;text-align:right;}
@@ -2608,11 +2613,13 @@ async function loadPending(){
     var who=esc(rosterName(it.code))+' <span style="opacity:.5;font-weight:500">('+esc(it.code)+')</span>';
     var lines=(it.records||[]).map(function(r){
       var dd=r.distance||r.reps||"";
-      var d=dd?(" "+((typeof r.sets==="number" && isFinite(r.sets) && r.sets>0)?(esc(r.sets)+" x "):"")+esc(dd)):"";
+      var sr=dd?(((typeof r.sets==="number" && isFinite(r.sets) && r.sets>0)?(esc(r.sets)+" x "):"")+esc(dd)):"";
+      if(!sr && typeof r.sets==="number" && isFinite(r.sets) && r.sets>0) sr=esc(r.sets)+(r.sets===1?" set":" sets");
+      var srh=sr?('<b class="pl-sr">'+sr+'</b>'):'';
       var hasW=(typeof r.weight==="number" && isFinite(r.weight) && r.weight>0);
       var shown=hasW?(esc(r.weight)+'kg'):'<span style="opacity:.55;font-weight:500">as prescribed</span>';
       var val=hasW?esc(r.weight):'';
-      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span><b class="pl-wv">'+shown+'</b><input class="pl-w" type="number" step="0.5" min="0" max="300" placeholder="\u2014" value="'+val+'"><span class="pl-u">kg</span></span><i>'+esc(r.program||"")+d+'</i></div>'+(r.note?('<div class="pl-n">'+esc(r.note)+'</div>'):'');
+      return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span class="pl-mid">'+srh+'<b class="pl-wv">'+shown+'</b><input class="pl-w" type="number" step="0.5" min="0" max="300" placeholder="\u2014" value="'+val+'"><span class="pl-u">kg</span></span><i>'+esc(r.program||"")+'</i></div>'+(r.note?('<div class="pl-n">'+esc(r.note)+'</div>'):'');
     }).join("");
     return '<div class="pl-card" id="plc-'+i+'"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
       '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
