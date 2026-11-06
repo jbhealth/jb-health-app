@@ -2614,7 +2614,21 @@ async function loadPending(){
       '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
   }).join("");
 }
-function toggleEdit(i, btn){ var c=document.getElementById("plc-"+i); if(!c) return; var on=c.classList.toggle("editing"); btn.textContent=on?"Done":"Edit"; }
+function toggleEdit(i, btn){ var c=document.getElementById("plc-"+i); if(!c) return; var on=c.classList.toggle("editing"); btn.textContent=on?"Done":"Edit"; if(!on) commitEdits(i); }
+/* Done: write what was typed back into the record AND the card text. Before 6 Nov 2026
+   Done only hid the box, so the card kept showing the received weight (60kg) while the
+   typed one (65) sat unseen in the box until Approve read it. An empty or invalid box
+   puts the received value back rather than silently keeping a stale-looking card. */
+function commitEdits(i){
+  var c=document.getElementById("plc-"+i); if(!c||!_pending[i]) return;
+  readEdits(i);
+  var inps=c.querySelectorAll(".pl-w"), shows=c.querySelectorAll(".pl-wv");
+  (_pending[i].records||[]).forEach(function(r,k){
+    var hasW=(typeof r.weight==="number" && isFinite(r.weight) && r.weight>0);
+    if(shows[k]) shows[k].innerHTML = hasW ? (esc(r.weight)+"kg") : '<span style="opacity:.55;font-weight:500">as prescribed</span>';
+    if(inps[k]) inps[k].value = hasW ? r.weight : "";
+  });
+}
 function readEdits(i){ var c=document.getElementById("plc-"+i); if(!c) return; var inps=c.querySelectorAll(".pl-w"); (_pending[i].records||[]).forEach(function(r,k){ if(inps[k]){ var v=parseFloat(inps[k].value); if(isFinite(v)&&v>0&&v<=300) r.weight=v; } }); }
 async function onApprove(i, btn){
   var it=_pending[i]; if(!it) return;
