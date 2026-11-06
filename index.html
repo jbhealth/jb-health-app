@@ -2604,7 +2604,8 @@ async function loadPending(){
   box.innerHTML=_pending.map(function(it,i){
     var who=esc(rosterName(it.code))+' <span style="opacity:.5;font-weight:500">('+esc(it.code)+')</span>';
     var lines=(it.records||[]).map(function(r){
-      var d=r.distance?(" "+esc(r.distance)):(r.reps?(" "+esc(r.reps)):"");
+      var dd=r.distance||r.reps||"";
+      var d=dd?(" "+((typeof r.sets==="number" && isFinite(r.sets) && r.sets>0)?(esc(r.sets)+" x "):"")+esc(dd)):"";
       var hasW=(typeof r.weight==="number" && isFinite(r.weight) && r.weight>0);
       var shown=hasW?(esc(r.weight)+'kg'):'<span style="opacity:.55;font-weight:500">as prescribed</span>';
       var val=hasW?esc(r.weight):'';
