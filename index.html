@@ -2617,7 +2617,7 @@ async function loadPending(){
       if(!sr && typeof r.sets==="number" && isFinite(r.sets) && r.sets>0) sr=esc(r.sets)+(r.sets===1?" set":" sets");
       var srh=sr?('<b class="pl-sr">'+sr+'</b>'):'';
       var hasW=(typeof r.weight==="number" && isFinite(r.weight) && r.weight>0);
-      var shown=hasW?(esc(r.weight)+'kg'):'<span style="opacity:.55;font-weight:500">as prescribed</span>';
+      var shown=hasW?(esc(r.weight)+'kg'):'<span style="opacity:.55;font-weight:500">'+((typeof r.load==="string"&&r.load)?esc(r.load):'as prescribed')+'</span>';
       var val=hasW?esc(r.weight):'';
       return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span class="pl-mid">'+srh+'<b class="pl-wv">'+shown+'</b><input class="pl-w" type="number" step="0.5" min="0" max="300" placeholder="\u2014" value="'+val+'"><span class="pl-u">kg</span></span><i>'+esc(r.program||"")+'</i></div>'+(r.note?('<div class="pl-n">'+esc(r.note)+'</div>'):'');
     }).join("");
@@ -2636,7 +2636,7 @@ function commitEdits(i){
   var inps=c.querySelectorAll(".pl-w"), shows=c.querySelectorAll(".pl-wv");
   (_pending[i].records||[]).forEach(function(r,k){
     var hasW=(typeof r.weight==="number" && isFinite(r.weight) && r.weight>0);
-    if(shows[k]) shows[k].innerHTML = hasW ? (esc(r.weight)+"kg") : '<span style="opacity:.55;font-weight:500">as prescribed</span>';
+    if(shows[k]) shows[k].innerHTML = hasW ? (esc(r.weight)+"kg") : '<span style="opacity:.55;font-weight:500">'+((typeof r.load==="string"&&r.load)?esc(r.load):'as prescribed')+'</span>';
     if(inps[k]) inps[k].value = hasW ? r.weight : "";
   });
 }
