@@ -1805,6 +1805,8 @@ function loadMasterIntoFrame(mhtml, code){
         if(!ok) setSave("warn","Editor runtime unavailable (offline, no cache). View only \u2014 do not push.");
         /* after the runtime: the panel's tab button calls showClient() */
         injectClientPanel(doc, code);
+        /* after the runtime: it carries the picture CSS and toggle script */
+        if(ok) injectPictures(doc);
       });
       if(!doc.getElementById("jbAppInjectCSS")){ var st=doc.createElement("style"); st.id="jbAppInjectCSS"; st.textContent="[onclick*='downloadMaster'],[onclick*='copyMaster']{display:none!important;}.trainer-note-input,.session-note-input,.client-cue-input{overflow:hidden;line-height:1.5;min-height:46px;}.client-cue-wrap{margin-top:10px;}.client-cue-label{font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#2E86C1;margin-bottom:4px;}.client-cue-input{width:100%;box-sizing:border-box;border:1px solid #D4E4F0;border-radius:6px;font-size:12px;padding:6px;font-family:inherit;background:#F4FAFE;}.client-cue-wrap.jb-cue-hidden{display:none;}.jb-cue-btn{margin-top:8px;background:transparent;border:1px dashed #2E86C1;color:#2E86C1;border-radius:14px;padding:4px 11px;font-size:11px;cursor:pointer;}.jb-foot{margin:24px 20px calc(28px + env(safe-area-inset-bottom));text-align:center;font-size:12px;color:var(--grey);}.jb-foot a{color:var(--blue);text-decoration:none;font-weight:600;}"; doc.head.appendChild(st); }
       if(doc.body && !doc.querySelector(".jb-foot")){ var ft=doc.createElement("div"); ft.className="jb-foot"; ft.setAttribute("data-appinject","1"); ft.innerHTML='JB Health \u00b7 <a href="https://jbhealth.co.uk" target="_blank" rel="noopener">jbhealth.co.uk</a>'; doc.body.appendChild(ft); }
@@ -1820,6 +1822,121 @@ function loadMasterIntoFrame(mhtml, code){
   document.getElementById("progTitle").textContent=code+" \u2014 Master";
   document.getElementById("progEditor").classList.add("show");
   setSave("ok","Master loaded \u2014 edit, then Push to Git.");
+}
+
+/* -- Exercise pictures in Masters (James, 9 Nov 2026) ------------------------
+   The same one-frame pictures the client sees, on each current programme's cards
+   (never the archive). Pictures come from JB Health's checked copy of Next Thirty's
+   set, masters/system/pictures/, and every one is checked against its sha256 here
+   before it is shown. They are kept in Cache Storage, NOT localStorage, so drafts
+   stay small, and everything added here is data-appinject, so nothing reaches a
+   saved master. The toggles and their CSS come from the editor runtime (one copy). */
+var _xpList=null;
+function loadXpList(){
+  if(_xpList) return Promise.resolve(_xpList);
+  return _cpFetch(PCFG.masters,"system/pictures/pictures-manifest.json","jbh_xplist",true)
+    .then(function(m){
+      if(!m||!m.pictures) return null;
+      var by={};
+      m.pictures.forEach(function(r){
+        if(r&&r.body==="figure"&&r.exercise&&r.file&&r.sha256&&/^(start|mid|finish|hold)$/.test(r.frame))
+          (by[r.exercise]=by[r.exercise]||[]).push(r);
+      });
+      _xpList=by; return by;
+    });
+}
+function _xpHex(buf){ var a=new Uint8Array(buf),s=""; for(var i=0;i<a.length;i++) s+=("0"+a[i].toString(16)).slice(-2); return s; }
+function _xpSize(b){ /* width/height from a JPEG frame header */
+  if(b[0]!==0xFF||b[1]!==0xD8) return null; var i=2;
+  while(i+9<b.length){ if(b[i]!==0xFF) return null; var m=b[i+1];
+    if(m===0xFF){ i++; continue; } if(m===0xD8||m===0x01||(m>=0xD0&&m<=0xD7)){ i+=2; continue; }
+    var seg=(b[i+2]<<8)|b[i+3];
+    if([0xC0,0xC1,0xC2,0xC3,0xC5,0xC6,0xC7,0xC9,0xCA,0xCB,0xCD,0xCE,0xCF].indexOf(m)>=0){
+      var h=(b[i+5]<<8)|b[i+6], w=(b[i+7]<<8)|b[i+8]; return (w&&h)?{w:w,h:h}:null; }
+    i+=2+seg; }
+  return null;
+}
+/* One picture: from Cache Storage, else from the copy in masters. Checked against its
+   sha256 either way; a picture that fails is simply not shown (and never cached). */
+function xpPicture(row){
+  var key="https://jbh-pictures.local/"+row.sha256;
+  var check=function(buf){
+    return crypto.subtle.digest("SHA-256",buf).then(function(d){
+      if(_xpHex(d)!==row.sha256) return null;
+      var b=new Uint8Array(buf), sz=_xpSize(b); if(!sz) return null;
+      return {buf:buf,w:sz.w,h:sz.h};
+    });
+  };
+  var cacheP=(window.caches?caches.open("jbh-pictures"):Promise.reject()).catch(function(){ return null; });
+  return cacheP.then(function(c){
+    return (c?c.match(key):Promise.resolve(null)).then(function(hit){
+      if(hit) return hit.arrayBuffer().then(check);
+      var name=row.file.split("/").pop();
+      return fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/contents/system/pictures/"+encodeURIComponent(name)+"?ref="+PCFG.branch,
+                   {headers:progHeaders()})
+        .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function(j){
+          var bin=atob(String(j.content||"").replace(/\s/g,"")), a=new Uint8Array(bin.length);
+          for(var i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i);
+          return check(a.buffer).then(function(ok){
+            if(ok&&c){ try{ c.put(key,new Response(new Blob([a],{type:"image/jpeg"}))); }catch(e){} }
+            return ok;
+          });
+        });
+    });
+  }).catch(function(){ return null; });
+}
+function _xpEsc(s){ return String(s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+var XP_LABEL={start:"Start",mid:"Middle",finish:"Finish",hold:"Hold"};
+var XP_CLOCK='<svg class="xp-clock" viewBox="0 0 18 18" role="img" aria-label="Timed hold"><circle cx="9" cy="9" r="7.5" fill="#FFFFFF" stroke="#1B3F6B" stroke-width="1.6"/><path d="M9 4.6V9l2.9 1.9" fill="none" stroke="#1B3F6B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function injectPictures(doc){
+  var win=doc.defaultView;
+  if(!win||typeof win.xpInit!=="function") return Promise.resolve(false);   /* runtime too old */
+  return Promise.all([loadXpList(),loadExPicker()]).then(function(a){
+    var by=a[0], picker=a[1]||{};
+    if(!by) return false;
+    var jobs=[];
+    Array.prototype.forEach.call(doc.querySelectorAll(".program-panel"), function(panel){
+      var t=panel.querySelector(".program-title");
+      if(t && t.textContent.trim()==="Archive") return;                       /* never the archive */
+      Array.prototype.forEach.call(panel.querySelectorAll(".exercise-card"), function(card){
+        if(card.querySelector(".xp-sec")) return;
+        var nm=card.querySelector(".ex-name"), desc=card.querySelector(".ex-desc");
+        if(!nm||!desc) return;
+        var name=nm.textContent.trim(), rows=by[name];
+        /* the description toggle: a small section just before the card's own
+           description, which the CSS hides while closed; nothing is moved */
+        var dsec=doc.createElement("div");
+        dsec.className="xp-sec xp-desc xp-closed"; dsec.setAttribute("data-default","closed"); dsec.setAttribute("data-appinject","1");
+        dsec.innerHTML='<button type="button" class="xp-tog" data-what="description" aria-expanded="false">Show description</button>';
+        desc.parentNode.insertBefore(dsec,desc);
+        if(!rows||!rows.length) return;
+        jobs.push(Promise.all(rows.map(xpPicture)).then(function(pics){
+          var ok=[]; pics.forEach(function(p,i){ if(p) ok.push({row:rows[i],p:p}); });
+          if(!ok.length) return;
+          var aspect=Math.max.apply(null,ok.map(function(o){ return o.p.w/o.p.h; })).toFixed(3);
+          var many=ok.length>1, timed=(picker[name]||{}).p==="time", inner=timed?XP_CLOCK:"", btns="";
+          ok.forEach(function(o,i){
+            var lab=(o.row.caption||XP_LABEL[o.row.frame]).trim();
+            inner+='<div class="xp-pic'+(i?"":" xp-on")+'" role="img" aria-label="'+_xpEsc(lab)+' position"></div>';
+            if(many) btns+='<button type="button" class="xp-fbtn'+(i?"":" xp-on")+'" aria-pressed="'+(i?"false":"true")+'">'+_xpEsc(lab)+'</button>';
+          });
+          var sec=doc.createElement("div");
+          sec.className="xp-sec xp-pics"; sec.setAttribute("data-default","open"); sec.setAttribute("data-appinject","1");
+          sec.innerHTML='<button type="button" class="xp-tog" data-what="pictures" aria-expanded="true">Hide pictures</button>'+
+            '<div class="xp-body"><div class="xp-frame'+(many?' xp-tap" title="Tap for the next picture':'')+'" style="--xp-a:'+aspect+'">'+inner+'</div>'+
+            (many?'<div class="xp-btns" role="group" aria-label="Choose a picture">'+btns+'</div>':'')+'</div>';
+          var divs=sec.querySelectorAll(".xp-pic");
+          ok.forEach(function(o,i){
+            divs[i].style.backgroundImage='url("'+URL.createObjectURL(new Blob([o.p.buf],{type:"image/jpeg"}))+'")';
+          });
+          card.insertBefore(sec,dsec);
+        }));
+      });
+    });
+    win.xpInit();                               /* description toggles first, pictures as they land */
+    return Promise.all(jobs).then(function(){ win.xpInit(); return true; });
+  }).catch(function(){ return false; });
 }
 
 /* ── Editor enhancements (injected, stripped on export via data-appinject) ──
