@@ -1930,7 +1930,10 @@ function injectPictures(doc){
           ok.forEach(function(o,i){
             divs[i].style.backgroundImage='url("'+URL.createObjectURL(new Blob([o.p.buf],{type:"image/jpeg"}))+'")';
           });
-          card.insertBefore(sec,dsec);
+          /* the two toggles side by side under the picture, as on client pages: one
+             wrapper holds both sections; the description itself stays where it is */
+          var wrap=doc.createElement("div"); wrap.className="xp-mwrap"; wrap.setAttribute("data-appinject","1");
+          card.insertBefore(wrap,dsec); wrap.appendChild(sec); wrap.appendChild(dsec);
         }));
       });
     });
