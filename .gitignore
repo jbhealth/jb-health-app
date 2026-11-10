@@ -1,0 +1,3 @@
+# Python cache files: made whenever a script runs, never wanted in the repo.
+__pycache__/
+*.pyc
