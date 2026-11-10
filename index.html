@@ -1553,16 +1553,36 @@ document.getElementById("modal").addEventListener("click",function(e){ if(e.targ
 /* iOS home-screen app: when the keyboard closes, WebKit can leave the layout
    viewport offset, so the fixed bottom nav paints mid-page (and the header
    slides under the status bar) until a restart. Once the viewport settles,
-   nudge the scroll position so WebKit re-anchors fixed elements. */
+   nudge the scroll position so WebKit re-anchors fixed elements.
+   10 Nov 2026: the first version missed three cases, all hit by the Pending
+   tab's Edit/Done. (1) A box hidden while it still held the keyboard stays the
+   "active" box, so the nudge thought James was still typing and did nothing.
+   (2) Down-one-up-one in the same instant nets to no scroll, so WebKit could
+   skip it: the way back now waits a frame. (3) At the foot of the page there
+   is no further down to go: it now nudges up instead. It also runs three
+   times, because the keyboard can still be sliding away at the first. */
 (function(){
-  var vv=window.visualViewport, t=null;
-  function settle(){ clearTimeout(t); t=setTimeout(function(){
+  var vv=window.visualViewport, timers=[];
+  function typing(){
     var a=document.activeElement;
-    if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+    if(!a||!/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
+    if(!a.isConnected||!a.getClientRects().length){ try{ a.blur(); }catch(e){} return false; }
+    return true;
+  }
+  function nudge(){
+    if(typing()) return;
     if(document.body.classList.contains("modal-open")) return;
     var x=window.scrollX||0, y=window.scrollY||0;
-    window.scrollTo(x,y+1); window.scrollTo(x,y);
-  },150); }
+    var max=Math.max(0,(document.documentElement.scrollHeight||0)-(window.innerHeight||0));
+    var y2=(y>0&&y>=max-1)?y-1:y+1;
+    window.scrollTo(x,y2);
+    requestAnimationFrame(function(){ window.scrollTo(x,y); });
+  }
+  function settle(){
+    timers.forEach(clearTimeout);
+    timers=[150,450,900].map(function(ms){ return setTimeout(nudge,ms); });
+  }
+  window.jbSettleViewport=settle;
   if(vv) vv.addEventListener("resize",settle);
   window.addEventListener("focusout",settle);
   window.addEventListener("pageshow",settle);
@@ -2749,7 +2769,10 @@ async function loadPending(){
       '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
   }).join("");
 }
-function toggleEdit(i, btn){ var c=document.getElementById("plc-"+i); if(!c) return; var on=c.classList.toggle("editing"); btn.textContent=on?"Done":"Edit"; if(!on) commitEdits(i); }
+function toggleEdit(i, btn){ var c=document.getElementById("plc-"+i); if(!c) return;
+  /* let go of the keyboard BEFORE the box is hidden, so iOS closes it cleanly */
+  try{ var _a=document.activeElement; if(_a&&_a!==document.body&&_a.blur) _a.blur(); }catch(e){}
+  var on=c.classList.toggle("editing"); if(!on&&window.jbSettleViewport) window.jbSettleViewport(); btn.textContent=on?"Done":"Edit"; if(!on) commitEdits(i); }
 /* Done: write what was typed back into the record AND the card text. Before 6 Nov 2026
    Done only hid the box, so the card kept showing the received weight (60kg) while the
    typed one (65) sat unseen in the box until Approve read it. An empty or invalid box
@@ -2768,6 +2791,7 @@ function readEdits(i){ var c=document.getElementById("plc-"+i); if(!c) return; v
 async function onApprove(i, btn){
   var it=_pending[i]; if(!it) return;
   readEdits(i);
+  try{ var _a=document.activeElement; if(_a&&_a!==document.body&&_a.blur) _a.blur(); }catch(e){}
   btn.disabled=true; btn.textContent="Saving\u2026";
   try{ await approveItem(it); await loadPending(); }
   catch(e){ btn.disabled=false; btn.textContent="Approve"; alert("Approve failed: "+e.message); }
