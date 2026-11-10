@@ -2122,6 +2122,10 @@ function enhanceEditor(doc){
       try{ fr_win(doc).initCues(); }catch(err){}
       try{ fr_win(doc)._enhanceCards(); }catch(err){}
       try{ decorateCueWraps(doc,newCard.parentNode); }catch(err){}
+      /* a card picked mid-session gets its pictures and Show pictures / Show description
+         toggles like the cards that were there at load (10 Nov 2026: injectPictures only
+         ran once, when the Master opened). It skips cards that already have theirs. */
+      try{ injectPictures(doc); }catch(err){}
       try{ doc.dispatchEvent(new (fr_win(doc).Event||Event)("input",{bubbles:true})); }catch(err){}
       newCard.scrollIntoView({block:"nearest",behavior:"smooth"});
       return true;
