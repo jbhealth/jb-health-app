@@ -1851,35 +1851,44 @@ function loadMasterIntoFrame(mhtml, code){
    before it is shown. They are kept in Cache Storage, NOT localStorage, so drafts
    stay small, and everything added here is data-appinject, so nothing reaches a
    saved master. The toggles and their CSS come from the editor runtime (one copy). */
-var _xpList=null;
+var _xpList=null, _xpWhy="";
 function loadXpList(){
   if(_xpList) return Promise.resolve(_xpList);
-  return Promise.all([
-    _cpFetch(PCFG.masters,"system/pictures/pictures-manifest.json","jbh_xplist",true),
-    _cpFetch(PCFG.masters,"system/00_-_load_relatives.json","jbh_xpsyn",true)
-  ]).then(function(a){
-      var m=a[0], rel=a[1];
-      if(!m||!m.pictures) return null;
+  return _cpFetch(PCFG.masters,"system/pictures/pictures-manifest.json","jbh_xplist",true)
+    .then(function(m){
+      if(!m||!m.pictures){ _xpWhy="the picture list didn't load"; return null; }
       var by={};
       m.pictures.forEach(function(r){
         if(r&&r.body==="figure"&&r.exercise&&r.file&&r.sha256&&/^(start|mid|finish|hold)$/.test(r.frame))
           (by[r.exercise]=by[r.exercise]||[]).push(r);
       });
-      /* Renamed exercises (James, 13 Nov 2026): a card still carrying an old name finds
-         its pictures under the new one, through the same synonyms the weight pills use
-         (masters/system/00_-_load_relatives.json, one hop, names compared loosely as
-         weight_guide does). Defined on the list, so nothing else changes shape. */
-      var pic={}, syn={};
-      Object.keys(by).forEach(function(n){ pic[_xpNorm(n)]=n; });
-      if(rel&&rel.synonyms) Object.keys(rel.synonyms).forEach(function(k){ syn[_xpNorm(k)]=_xpNorm(rel.synonyms[k]); });
-      Object.defineProperty(by,"_name",{value:function(n){
-        if(by.hasOwnProperty(n)) return n;
-        var k=_xpNorm(n); return pic[syn[k]||k]||n;
-      }});
       _xpList=by; return by;
     });
 }
+/* Renamed exercises (James, 13 Nov 2026): a card still carrying an old name finds its
+   pictures under the new one, through the same synonyms the weight pills use
+   (masters/system/00_-_load_relatives.json, one hop, names compared loosely as
+   weight_guide does). Loaded on its own and never in the way: if it fails, or anything
+   in it goes wrong, names are matched exactly as before. */
+var _xpSyn=null;
+function loadXpSyn(){
+  if(_xpSyn) return Promise.resolve(_xpSyn);
+  return _cpFetch(PCFG.masters,"system/00_-_load_relatives.json","jbh_xpsyn",true)
+    .then(function(rel){
+      var syn={};
+      try{ if(rel&&rel.synonyms) Object.keys(rel.synonyms).forEach(function(k){ syn[_xpNorm(k)]=_xpNorm(rel.synonyms[k]); }); }catch(e){ syn={}; }
+      _xpSyn=syn; return syn;
+    }).catch(function(){ return {}; });
+}
 function _xpNorm(n){ return String(n).replace(/[\u2013\u2014\u2212]/g,"-").replace(/\s+/g," ").trim().toLowerCase(); }
+function _xpName(by, syn, n){
+  try{
+    if(Object.prototype.hasOwnProperty.call(by,n)) return n;
+    var k=_xpNorm(n); k=(syn&&syn[k])||k;
+    for(var e in by){ if(Object.prototype.hasOwnProperty.call(by,e) && _xpNorm(e)===k) return e; }
+  }catch(e){}
+  return n;
+}
 function _xpHex(buf){ var a=new Uint8Array(buf),s=""; for(var i=0;i<a.length;i++) s+=("0"+a[i].toString(16)).slice(-2); return s; }
 function _xpSize(b){ /* width/height from a JPEG frame header */
   if(b[0]!==0xFF||b[1]!==0xD8) return null; var i=2;
@@ -1927,9 +1936,9 @@ var XP_CLOCK='<svg class="xp-clock" viewBox="0 0 18 18" role="img" aria-label="T
 function injectPictures(doc){
   var win=doc.defaultView;
   if(!win||typeof win.xpInit!=="function") return Promise.resolve(false);   /* runtime too old */
-  return Promise.all([loadXpList(),loadExPicker()]).then(function(a){
-    var by=a[0], picker=a[1]||{};
-    if(!by) return false;
+  return Promise.all([loadXpList(),loadExPicker(),loadXpSyn()]).then(function(a){
+    var by=a[0], picker=a[1]||{}, syn=a[2]||{};
+    if(!by){ _xpSay(doc,"Pictures not shown: "+(_xpWhy||"the picture list didn't load")+". Tap Pull to try again."); return false; }
     var jobs=[];
     Array.prototype.forEach.call(doc.querySelectorAll(".program-panel"), function(panel){
       var t=panel.querySelector(".program-title");
@@ -1938,7 +1947,7 @@ function injectPictures(doc){
         if(card.querySelector(".xp-sec")) return;
         var nm=card.querySelector(".ex-name"), desc=card.querySelector(".ex-desc");
         if(!nm||!desc) return;
-        var name=by._name(nm.textContent.trim()), rows=by[name];
+        var name=_xpName(by,syn,nm.textContent.trim()), rows=by[name];
         /* the description toggle: a small section just before the card's own
            description, which the CSS hides while closed; nothing is moved */
         var dsec=doc.createElement("div");
@@ -1974,7 +1983,21 @@ function injectPictures(doc){
     });
     win.xpInit();                               /* description toggles first, pictures as they land */
     return Promise.all(jobs).then(function(){ win.xpInit(); return true; });
-  }).catch(function(){ return false; });
+  }).catch(function(err){
+    _xpSay(doc,"Pictures not shown: "+((err&&err.message)||err||"unknown error")+". Send James's Claude a screenshot of this line.");
+    return false;
+  });
+}
+/* A one-line note at the top of a Master when its pictures can't be shown, so a failure
+   says why instead of failing silently (13 Nov 2026). data-appinject: never saved. */
+function _xpSay(doc, msg){
+  try{
+    if(doc.querySelector(".xp-say")) return;
+    var d=doc.createElement("div"); d.className="xp-say"; d.setAttribute("data-appinject","1");
+    d.style.cssText="margin:10px 16px;padding:8px 12px;border-radius:8px;background:#FDF2E9;color:#B03A2E;font:13px/1.4 'DM Sans',sans-serif;";
+    d.textContent=msg;
+    var c=doc.querySelector(".content")||doc.body; c.insertBefore(d,c.firstChild);
+  }catch(e){}
 }
 
 /* ── Editor enhancements (injected, stripped on export via data-appinject) ──
