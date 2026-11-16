@@ -348,6 +348,13 @@ body.modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden;}
     .sum-state.warn{color:#9A5B00;}
     .sum-state.ok{color:#27AE60;font-weight:600;}
 .pl-rej{background:#fff;color:#9A3030;border:1px solid #E0B4B4 !important;}
+.pl-state{font-size:13px;line-height:1.45;border-radius:8px;padding:8px 10px;margin-top:10px;}
+.pl-state.ing{background:rgba(46,134,193,0.08);color:var(--navy,#1B3F6B);}
+.pl-state.flag{background:#FFF6E5;color:#7A4A00;}
+.pl-state.fail{background:#FCEDED;color:#8A2B2B;}
+.pl-card.st-ingesting{border-left-color:#B9CBDD;opacity:.85;}
+.pl-card.st-flagged{border-left-color:#E0A030;}
+.pl-card.st-failed{border-left-color:#C0504D;}
 </style>
 <script>
 /* Public file — INITIALS ONLY, no real names. Friendly names live in the private
@@ -2476,7 +2483,7 @@ startup();
 var WORKER="https://jb-log.james-52d.workers.dev";
 var _pending=[];
 function adminTok(){ return lsGet("jbh_admin")||""; }
-function setAdminTok(){ var t=prompt("Paste the endpoint admin token:", adminTok()); if(t!=null){ lsSet("jbh_admin", t.trim()); requestNotifPerm(); loadPending(); } }
+function setAdminTok(){ var t=prompt("Paste the endpoint admin token:", adminTok()); if(t!=null){ lsSet("jbh_admin", t.trim()); _subSent=false; resendPushSub(); requestNotifPerm(); loadPending(); } }
 function fmtDate(iso){ var m=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; var p=String(iso).split("-"); return parseInt(p[2],10)+" "+m[parseInt(p[1],10)-1]+" "+p[0]; }
 function updatePendingBadge(n){
   /* both badges handled independently, both directions: the bottom-bar count used to
@@ -2510,12 +2517,45 @@ async function fetchPending(){
 async function resolvePending(key){
   await fetch(WORKER+"/resolve", {method:"POST", headers:{"content-type":"application/json","x-jb-admin":adminTok()}, body:JSON.stringify({key:key})});
 }
-/* Ingest-on-approval (build step 6): Approve dispatches the ingest Action,
-   which strict-matches the log against the live master, writes the full-workout
-   archive block, banks the store, and republishes the client — or flags and
-   writes NOTHING, leaving the item pending for the roundup. Dispatch failure
-   falls back to the legacy bank-only path so a GitHub wobble never blocks you. */
+/* Approve (Pending tab speed, 16 Nov 2026). The JB Health Worker holds each item's
+   state, so the phone no longer has to remember anything:
+     1. POST /approve marks the item "ingesting" and hands back a one-off ticket.
+        A second press, a refresh, a reload or another device sees "Ingesting"
+        and cannot start a second run.
+     2. The ingest Action is started with the item's key and ticket, and reports
+        back to the JB Health Worker itself when it is done (ok, flagged, a named
+        guard, or failed). A push says how it went; the card follows.
+   Nothing here waits on the run. If the Action cannot be started at all, the item
+   goes back to waiting and the legacy bank-only path runs, as before.
+   An older JB Health Worker without /approve answers 404: then the previous
+   dispatch-and-wait path below runs unchanged. */
 async function approveItem(it){
+  var r=await fetch(WORKER+"/approve",{method:"POST",
+    headers:{"content-type":"application/json","x-jb-admin":adminTok()},body:JSON.stringify({key:it.key})});
+  var j=null; try{ j=await r.json(); }catch(e){}
+  if(r.status===404) return approveItemPolling(it);
+  if(r.status===409){ holdState(it.key,"ingesting"); return; }   /* a double tap: it is already going */
+  if(r.status===410) { _gone[it.key]=Date.now(); return; }
+  if(!r.ok||!j||!j.ticket) throw new Error((j&&j.error)||("endpoint "+r.status));
+  try{
+    var d=await fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/actions/workflows/ingest.yml/dispatches",{
+      method:"POST",headers:progHeaders(),
+      body:JSON.stringify({ref:PCFG.branch,inputs:{
+        code:it.code,date:it.date,records:JSON.stringify(it.records||[]),key:it.key,ticket:j.ticket}})});
+    if(!d.ok&&d.status!==204) throw new Error("dispatch "+d.status);
+    holdState(it.key,"ingesting");
+  }catch(e){
+    try{ await fetch(WORKER+"/approve-cancel",{method:"POST",
+      headers:{"content-type":"application/json","x-jb-admin":adminTok()},body:JSON.stringify({key:it.key})}); }catch(_){}
+    await approveItemLegacy(it);
+    _gone[it.key]=Date.now();
+    alert("Ingest Action unavailable ("+e.message+") \u2014 banked to the weight store only; the roundup will archive it as before.");
+  }
+}
+
+/* Previous path, kept only for an older JB Health Worker: dispatch, then wait on
+   system/ingest-last.json. */
+async function approveItemPolling(it){
   var since=Math.floor(Date.now()/1000)-5;
   try{
     var r=await fetch("https://api.github.com/repos/"+PCFG.owner+"/"+PCFG.masters+"/actions/workflows/ingest.yml/dispatches",{
@@ -2576,6 +2616,7 @@ async function approveItemLegacy(it){
   doc.code=it.code; doc.schema=doc.schema||1; doc.generated=new Date().toISOString().slice(0,10);
   await ghPutWeights(it.code, doc, got.sha);
   await resolvePending(it.key);
+  _gone[it.key]=Date.now();
 }
 var _intakes=[];
 async function fetchIntakes(){
@@ -2756,18 +2797,82 @@ async function markSummarySent(doc){
   });
 }
 
+/* Items cleared from this phone in the last two minutes stay hidden, so a slow
+   refresh can never bring a done item back with a live Approve. */
+var _gone={};
+/* What this phone just did, held until the JB Health Worker's store catches up:
+   the store can show a copy up to a minute old (seen in the JB_TD test, 16 Nov
+   2026), so a log approved a moment ago can still read "waiting", and a failed
+   one can still read "ingesting". The phone's own knowledge wins until the store
+   says something newer. */
+var _held={}; try{ _held=JSON.parse(lsGet("jbh_held")||"{}")||{}; }catch(e){ _held={}; }   /* survives a reload */
+function saveHeld(){ try{ lsSet("jbh_held", JSON.stringify(_held)); }catch(e){} }
+function holdState(key,state){ _held[key]={state:state,at:Date.now()}; saveHeld(); }
+function applyHeld(it){
+  var h=_held[it.key]; if(!h) return it;
+  if(Date.now()-h.at>10*60000){ delete _held[it.key]; saveHeld(); return it; }
+  var srv=it.state||"waiting";
+  var newer=Date.parse(it.state_at||0)>h.at-5000;
+  if(srv!=="waiting"&&srv!=="ingesting"&&newer){ delete _held[it.key]; saveHeld(); return it; }   /* a real outcome */
+  if(srv===h.state){ delete _held[it.key]; saveHeld(); return it; }                                /* caught up */
+  /* the store is showing something older than what this phone did: show what it did */
+  return Object.assign({},it,{state:h.state,state_at:new Date(h.at).toISOString(),reason:""});
+}
+function viewItems(items){ return items.filter(notGone).map(applyHeld); }
+function notGone(it){ var t=_gone[it.key]; if(t&&Date.now()-t<120000) return false; if(t) delete _gone[it.key]; return true; }
+/* Items that need James: everything except a run still going. */
+function needsYou(items){ return items.filter(function(it){ return it.state!=="ingesting"; }).length; }
+function pendSig(items){ return items.map(function(it){ return it.key+"|"+(it.state||"")+"|"+(it.reason||""); }).join(";"); }
+var _pendSig="", _pendPoll=null;
+/* While anything is ingesting and the tab is open, ask the JB Health Worker every
+   5 seconds (one quick call). The cards only redraw when something changed, and
+   never while a card is open for editing. */
+function pendingPollTick(){
+  _pendPoll=null;
+  var view=document.getElementById("view-pending");
+  if(document.visibilityState!=="visible"||!view||!view.classList.contains("active")) return;
+  if(!_pending.some(function(it){ return it.state==="ingesting"; })) return;
+  fetchPending().then(function(items){
+    items=viewItems(items);
+    if(pendSig(items)!==_pendSig && !document.querySelector(".pl-card.editing")) renderPending(items);
+    else armPendingPoll();
+  }).catch(function(){ armPendingPoll(); });
+}
+function armPendingPoll(){ if(!_pendPoll) _pendPoll=setTimeout(pendingPollTick,5000); }
+function plainReason(r){ return esc(String(r||"").replace(/[.\s]+$/,"")); }
+function cardState(it){
+  if(it.state==="ingesting") return '<div class="pl-state ing">Ingesting\u2026 started '+esc(String(it.state_at||"").slice(11,16))+'. You can leave this; a notification will say how it went.</div>';
+  if(it.state==="flagged") return '<div class="pl-state flag">'+(it.guard?('<b>Stopped by the '+esc(it.guard)+(it.file?(' ('+esc(it.file)+')'):'')+'.</b> '):'<b>Left for the roundup.</b> ')+plainReason(it.reason)+'. Nothing was written.</div>';
+  if(it.state==="failed") return '<div class="pl-state fail"><b>Ingest failed.</b> '+plainReason(it.reason)+'. Retry is safe.</div>';
+  return "";
+}
+function cardButtons(it,i){
+  if(it.state==="ingesting") return "";
+  if(it.state==="flagged") return '<div class="pl-btns"><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div>';
+  var go=(it.state==="failed")?"Retry":"Approve";
+  return '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">'+go+'</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div>';
+}
 async function loadPending(){
   var box=document.getElementById("pendingList"); if(!box) return;
   if(!adminTok()){ box.innerHTML='<div class="note">Set the endpoint token first (button above).</div>'; updatePendingBadge(0); osBadge(0); return; }
-  box.innerHTML='<div class="note">Loading\u2026</div>';
-  try{ _pending=await fetchPending(); }
-  catch(e){ box.innerHTML='<div class="statusline warn">Couldn\u2019t reach the endpoint ('+esc(e.message)+').</div>'; return; }
-  try{ _intakes=await fetchIntakes(); }catch(e){ _intakes=[]; }
+  if(!_pending.length) box.innerHTML='<div class="note">Loading\u2026</div>';
+  /* logs and intakes together, not one after the other. Weekly summaries are
+     retired (19 Sep 2026), so the tab no longer reads summaries/ on every open;
+     renderSummaries() stays in place for if James ever reinstates them. */
+  var got=await Promise.all([
+    fetchPending().then(function(v){ return {ok:true,v:v}; },function(e){ return {ok:false,e:e}; }),
+    fetchIntakes().catch(function(){ return []; })]);
+  if(!got[0].ok){ box.innerHTML='<div class="statusline warn">Couldn\u2019t reach the endpoint ('+esc(got[0].e.message)+').</div>'; return; }
+  _intakes=got[1];
   renderIntakes();
-  renderSummaries();
-  var total=_pending.length+_intakes.length;
-  if(!_pending.length){ box.innerHTML='<div class="note">No pending logs.</div>'; updatePendingBadge(total); osBadge(total); return; }
+  renderPending(viewItems(got[0].v));
+}
+function renderPending(items){
+  var box=document.getElementById("pendingList"); if(!box) return;
+  _pending=items; _pendSig=pendSig(items);
+  var total=needsYou(_pending)+_intakes.length;
   updatePendingBadge(total); osBadge(total);
+  if(!_pending.length){ box.innerHTML='<div class="note">No pending logs.</div>'; return; }
   box.innerHTML=_pending.map(function(it,i){
     var who=esc(rosterName(it.code))+' <span style="opacity:.5;font-weight:500">('+esc(it.code)+')</span>';
     var lines=(it.records||[]).map(function(r){
@@ -2780,9 +2885,10 @@ async function loadPending(){
       var val=hasW?esc(r.weight):'';
       return '<div class="pl-rec"><span>'+esc(r.ex)+'</span><span class="pl-mid">'+srh+'<b class="pl-wv">'+shown+'</b><input class="pl-w" type="number" step="0.5" min="0" max="300" placeholder="\u2014" value="'+val+'"><span class="pl-u">kg</span></span><i>'+esc(r.program||"")+'</i></div>'+(r.note?('<div class="pl-n">'+esc(r.note)+'</div>'):'');
     }).join("");
-    return '<div class="pl-card" id="plc-'+i+'"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
-      '<div class="pl-btns"><button class="pl-app" onclick="onApprove('+i+',this)">Approve</button><button class="pl-edit" onclick="toggleEdit('+i+',this)">Edit</button><button class="pl-rej" onclick="onReject('+i+')">Reject</button></div></div>';
+    return '<div class="pl-card'+(it.state?(' st-'+esc(it.state)):'')+'" id="plc-'+i+'"><div class="pl-head"><span>'+who+'</span><span class="pl-date">'+esc(it.date)+'</span></div>'+lines+
+      cardState(it)+cardButtons(it,i)+'</div>';
   }).join("");
+  armPendingPoll();
 }
 function toggleEdit(i, btn){ var c=document.getElementById("plc-"+i); if(!c) return;
   /* let go of the keyboard BEFORE the box is hidden, so iOS closes it cleanly */
@@ -2807,14 +2913,15 @@ async function onApprove(i, btn){
   var it=_pending[i]; if(!it) return;
   readEdits(i);
   try{ var _a=document.activeElement; if(_a&&_a!==document.body&&_a.blur) _a.blur(); }catch(e){}
-  btn.disabled=true; btn.textContent="Saving\u2026";
+  var was=btn.textContent;
+  btn.disabled=true; btn.textContent="Starting\u2026";
   try{ await approveItem(it); await loadPending(); }
-  catch(e){ btn.disabled=false; btn.textContent="Approve"; alert("Approve failed: "+e.message); }
+  catch(e){ btn.disabled=false; btn.textContent=was; alert("Approve failed: "+e.message); }
 }
 async function onReject(i){
   var it=_pending[i]; if(!it) return;
   if(!confirm("Discard this submission?")) return;
-  try{ await resolvePending(it.key); await loadPending(); }
+  try{ await resolvePending(it.key); _gone[it.key]=Date.now(); await loadPending(); }
   catch(e){ alert("Reject failed: "+e.message); }
 }
 
@@ -2882,12 +2989,31 @@ async function enableNotifs(){
     alert("Done \u2014 this device now gets a ping when a log or intake arrives.");
   }catch(e){ alert("Couldn\u2019t enable: "+e.message); }
 }
-async function refreshBadge(){ if(!adminTok()){ osBadge(0); return; } try{ var items=await fetchPending(); var n=items.length; try{ n+=(await fetchIntakes()).length; }catch(e){} osBadge(n); updatePendingBadge(n); }catch(e){} }
+async function refreshBadge(){ if(!adminTok()){ osBadge(0); return; } resendPushSub(); try{ var items=viewItems(await fetchPending()); var n=needsYou(items); try{ n+=(await fetchIntakes()).length; }catch(e){} osBadge(n); updatePendingBadge(n);
+  /* back in the app with the Pending tab open: catch up on anything that finished meanwhile */
+  var v=document.getElementById("view-pending"); if(v&&v.classList.contains("active")&&pendSig(items)!==_pendSig&&!document.querySelector(".pl-card.editing")) renderPending(items);
+}catch(e){} }
+/* Re-send this device's push subscription on open, quietly, so the JB Health Worker
+   holds its keys and can put words inside an ingest push (16 Nov 2026). Only when
+   notifications are already allowed: it never asks. Also clears any copy of the
+   endpoint token an earlier build of this page left for the service worker. */
+var _subSent=false;
+function resendPushSub(){
+  if(_subSent) return; _subSent=true;
+  try{ if(window.caches) caches.delete("jbh-admin").catch(function(){}); }catch(e){}
+  try{
+    if(!adminTok()||!("serviceWorker" in navigator)||!("Notification" in window)||Notification.permission!=="granted") return;
+    navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription(); }).then(function(sub){
+      if(!sub) return;
+      return fetch(WORKER+"/subscribe",{method:"POST",headers:{"x-jb-admin":adminTok(),"content-type":"application/json"},body:JSON.stringify({subscription:sub.toJSON()})});
+    }).catch(function(){});
+  }catch(e){}
+}
 /* badge on open, then keep it fresh while the app is open (background updates need Web Push) */
 setTimeout(function(){ requestNotifPerm(); refreshBadge(); }, 1500);
 /* no polling: background updates arrive by Web Push; badge refreshes on open/foreground only */
-document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); foregroundRefresh(); } else { osBadge(_pending.length+_intakes.length); } });
-window.addEventListener("pagehide", function(){ osBadge(_pending.length+_intakes.length); });
+document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible"){ refreshBadge(); foregroundRefresh(); } else { osBadge(needsYou(_pending)+_intakes.length); } });
+window.addEventListener("pagehide", function(){ osBadge(needsYou(_pending)+_intakes.length); });
 
 /* ── Actions tab ── */
 function toggleActBody(bodyId,resId){

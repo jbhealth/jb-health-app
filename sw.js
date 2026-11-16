@@ -50,8 +50,26 @@ async function badgePaint(n) {
   } catch (e) {}
 }
 
+/* Ingest outcomes (16 Nov 2026, Pending tab speed). When an approved log finishes,
+   the JB Health Worker pushes with the words inside, encrypted for this device:
+   ingested, left for the roundup (naming the guard that stopped it, if one did),
+   or failed. A push with no words is a new client log or intake form, as before. */
+function pushNote(e) {
+  try { const n = e.data && e.data.json(); return (n && n.title) ? n : null; } catch (err) { return null; }
+}
+
 self.addEventListener("push", (e) => {
   e.waitUntil((async () => {
+    const note = pushNote(e);
+    if (note) {
+      await self.registration.showNotification(note.title, {
+        body: note.body || "", tag: "jbh-ingest-" + (note.key || ""), badge: "icon-192.png", icon: "icon-192.png",
+      });
+      /* the count stopped including this log when Approve was pressed: an ingested
+         log leaves it there, a flagged or failed one needs James again */
+      if (note.kind !== "ok") { const n = (await badgeGet()) + 1; await badgeStore(n); await badgePaint(n); }
+      return;
+    }
     /* banner FIRST: iOS requires one per push, and nothing above it may block it */
     await self.registration.showNotification("JB Health", {
       body: "New submission waiting: a client log or intake form.",
