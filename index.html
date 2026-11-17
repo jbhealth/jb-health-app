@@ -1929,14 +1929,50 @@ function xpPicture(row){
   }).catch(function(){ return null; });
 }
 function _xpEsc(s){ return String(s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+/* -- JB Health logo on each picture (James, 17 Nov 2026) ---------------------
+   Drawn over the picture at the moment it shows, never baked in: every picture file
+   stays exactly as approved. The stacked colour mark (jbhealth_mark.png, served with
+   the app), bottom right of the picture itself, 13% of the picture's width, 70%
+   opacity, a small gap from the edges. The app only: client pages are untouched.
+   Kept in Cache Storage beside the pictures so it shows offline too; if it can't be
+   had, the picture shows without it. Everything here is data-appinject. */
+var _xpMark=null;
+function loadXpMark(){
+  if(_xpMark) return _xpMark;
+  var key="https://jbh-pictures.local/jbhealth_mark.png";
+  var cacheP=(window.caches?caches.open("jbh-pictures"):Promise.reject()).catch(function(){ return null; });
+  _xpMark=cacheP.then(function(c){
+    var net=function(){
+      return fetch("jbhealth_mark.png").then(function(r){
+        if(!r.ok) throw new Error(r.status);
+        if(c){ try{ c.put(key,r.clone()); }catch(e){} }
+        return r.blob();
+      });
+    };
+    return (c?c.match(key):Promise.resolve(null)).then(function(hit){ return hit?hit.blob():net(); });
+  }).then(function(b){ return URL.createObjectURL(b); }).catch(function(){ _xpMark=null; return null; });
+  return _xpMark;
+}
+/* The file is 720 x 720 with the mark in the middle 366 x 424; the box is the mark's own
+   shape and the background is scaled and centred so only the mark fills it. The picture
+   box is the picture's true shape fitted inside .xp-pic, as background-size:contain does. */
+var XP_MARK_CSS=".xp-pic{container-type:size;}"+
+  ".jb-xpm-box{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);"+
+    "width:min(100cqw,calc(100cqh * var(--xp-pa,1)));height:min(100cqh,calc(100cqw / var(--xp-pa,1)));pointer-events:none;}"+
+  ".jb-xpm{position:absolute;right:2.5%;bottom:calc(2.5% * var(--xp-pa,1));width:13%;aspect-ratio:366/424;"+
+    "background-repeat:no-repeat;background-position:center;background-size:196.72% auto;opacity:0.7;}";
 var XP_LABEL={start:"Start",mid:"Middle",finish:"Finish",hold:"Hold"};
 var XP_CLOCK='<svg class="xp-clock" viewBox="0 0 18 18" role="img" aria-label="Timed hold"><circle cx="9" cy="9" r="7.5" fill="#FFFFFF" stroke="#1B3F6B" stroke-width="1.6"/><path d="M9 4.6V9l2.9 1.9" fill="none" stroke="#1B3F6B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function injectPictures(doc){
   var win=doc.defaultView;
   if(!win||typeof win.xpInit!=="function") return Promise.resolve(false);   /* runtime too old */
-  return Promise.all([loadXpList(),loadExPicker()]).then(function(a){
-    var by=a[0], picker=a[1]||{};
+  return Promise.all([loadXpList(),loadExPicker(),loadXpMark()]).then(function(a){
+    var by=a[0], picker=a[1]||{}, mark=a[2];
     if(!by) return false;
+    if(mark && !doc.getElementById("jbXpMarkCSS")){
+      var mst=doc.createElement("style"); mst.id="jbXpMarkCSS"; mst.setAttribute("data-appinject","1");
+      mst.textContent=XP_MARK_CSS; doc.head.appendChild(mst);
+    }
     var jobs=[];
     Array.prototype.forEach.call(doc.querySelectorAll(".program-panel"), function(panel){
       var t=panel.querySelector(".program-title");
@@ -1960,7 +1996,8 @@ function injectPictures(doc){
           var many=ok.length>1, timed=(picker[name]||{}).p==="time", inner=timed?XP_CLOCK:"", btns="";
           ok.forEach(function(o,i){
             var lab=(o.row.caption||XP_LABEL[o.row.frame]).trim();
-            inner+='<div class="xp-pic'+(i?"":" xp-on")+'" role="img" aria-label="'+_xpEsc(lab)+' position"></div>';
+            inner+='<div class="xp-pic'+(i?"":" xp-on")+'" role="img" aria-label="'+_xpEsc(lab)+' position">'+
+              (mark?'<span class="jb-xpm-box" aria-hidden="true" style="--xp-pa:'+(o.p.w/o.p.h).toFixed(4)+'"><span class="jb-xpm" style="background-image:url(&quot;'+mark+'&quot;)"></span></span>':'')+'</div>';
             if(many) btns+='<button type="button" class="xp-fbtn'+(i?"":" xp-on")+'" aria-pressed="'+(i?"false":"true")+'">'+_xpEsc(lab)+'</button>';
           });
           var sec=doc.createElement("div");
